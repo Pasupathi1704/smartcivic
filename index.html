@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Smart Civic — Municipal Service Tracker</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏛️</text></svg>" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%2343e4e0%22/><text x=%2250%22 y=%2268%22 text-anchor=%22middle%22 font-family=%22Arial%22 font-weight=%22700%22 font-size=%2248%22 fill=%22%23070b18%22>SC</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css" />
+<link rel="stylesheet" href="css/experience.css" />
+</head>
+<body>
+
+<div id="app" role="main"></div>
+
+<!-- Templates -->
+<template id="tpl-login">
+  <div class="login-shell">
+    <div class="login-mark">
+      <span class="login-mark__glyph">SC</span>
+      <div>
+        <h1>Smart Civic</h1>
+        <p>A shared ledger for reported problems, assigned work, and completed service.</p>
+      </div>
+    </div>
+
+    <div class="login-panel">
+      <div class="login-panel__tabs" id="login-role-tabs">
+        <button type="button" class="role-tab is-active" data-role="citizen">Resident</button>
+        <button type="button" class="role-tab" data-role="staff">Department staff</button>
+        <button type="button" class="role-tab" data-role="admin">Administrator</button>
+      </div>
+
+      <form id="login-form" class="login-form">
+        <label>
+          <span>Username</span>
+          <input type="text" id="login-username" autocomplete="username" required />
+        </label>
+        <label>
+          <span>Password</span>
+          <input type="password" id="login-password" autocomplete="current-password" required />
+        </label>
+        <p class="login-error" id="login-error" hidden></p>
+        <button type="submit" class="btn btn--primary btn--block">Sign in</button>
+      </form>
+
+      <div class="login-demo" id="login-demo"></div>
+    </div>
+  </div>
+</template>
+
+<!-- Reusable UI modules load before the feature application. -->
+<script src="js/ui/list-controls.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
