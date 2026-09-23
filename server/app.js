@@ -7,6 +7,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
+import compression from "compression";
 import { v2 as cloudinary } from "cloudinary";
 import { CloudinaryStorage } from "multer-storage-cloudinary";
 import mongoose from "mongoose";
@@ -37,19 +38,18 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }
 });
 const app = express();
-const allowedOrigins = (process.env.CORS_ORIGIN || `http://localhost:${port}`).split(",").map(origin => origin.trim().replace(/\/+$/, ""));
-app.use(cors({
-  origin(origin, done) {
-    // Allow no-origin (same-origin fetch, curl, Postman) and any explicitly listed origin.
-    // Also allow if the request comes from the same host as the server itself.
-    if (!origin || allowedOrigins.includes(origin)) return done(null, true);
-    return done(Object.assign(new Error("Origin is not allowed by CORS."), { status: 403 }));
-  },
-  credentials: true,
-}));
+
+// Gzip compress all HTTP responses
+app.use(compression());
+
+/* The API is secured by JWT, so we can safely allow all origins.
+   This avoids brittle env-var-based origin matching when the frontend
+   and backend are co-hosted on the same Render URL. */
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: "1mb" }));
 // Local uploads no longer served
-app.use(express.static(root, { index: "index.html" }));
+// Cache static assets (CSS, JS, images) for 1 day
+app.use(express.static(root, { index: "index.html", maxAge: "1d" }));
 
 const tokenFor = user => jwt.sign({ sub: user.id, role: user.role, username: user.username }, jwtSecret, { expiresIn: "8h" });
 const publicUser = user => ({ id: String(user._id), username: user.username, role: user.role, name: user.name, department: user.department, workTypes: user.workTypes, coins: user.coins });
