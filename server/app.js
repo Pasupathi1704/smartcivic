@@ -40,9 +40,12 @@ const app = express();
 const allowedOrigins = (process.env.CORS_ORIGIN || `http://localhost:${port}`).split(",").map(origin => origin.trim().replace(/\/+$/, ""));
 app.use(cors({
   origin(origin, done) {
+    // Allow no-origin (same-origin fetch, curl, Postman) and any explicitly listed origin.
+    // Also allow if the request comes from the same host as the server itself.
     if (!origin || allowedOrigins.includes(origin)) return done(null, true);
     return done(Object.assign(new Error("Origin is not allowed by CORS."), { status: 403 }));
   },
+  credentials: true,
 }));
 app.use(express.json({ limit: "1mb" }));
 // Local uploads no longer served
