@@ -1,6 +1,5 @@
 import "dotenv/config";
 import path from "node:path";
-import { mkdirSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
@@ -8,7 +7,8 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
-import { fileTypeFromFile } from "file-type";
+import { v2 as cloudinary } from "cloudinary";
+import { CloudinaryStorage } from "multer-storage-cloudinary";
 import mongoose from "mongoose";
 import { connectDatabase } from "./db.js";
 import { User, Report, Payout } from "./models.js";
@@ -18,13 +18,23 @@ const port = Number(process.env.PORT || 5000);
 const jwtSecret = process.env.JWT_SECRET;
 if (!jwtSecret) throw new Error("JWT_SECRET is required. Copy .env.example to .env and set it.");
 
-const uploadDir = path.resolve(root, process.env.UPLOAD_DIR || "uploads");
-mkdirSync(uploadDir, { recursive: true });
-const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "civic-register",
+    allowed_formats: ["jpg", "jpeg", "png", "webp", "gif"]
+  },
+});
+
 const upload = multer({
-  dest: uploadDir,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (_req, file, done) => done(null, allowedImageTypes.has(file.mimetype)),
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }
 });
 const app = express();
 const allowedOrigins = (process.env.CORS_ORIGIN || `http://localhost:${port}`).split(",").map(origin => origin.trim().replace(/\/+$/, ""));
@@ -35,7 +45,7 @@ app.use(cors({
   },
 }));
 app.use(express.json({ limit: "1mb" }));
-app.use("/uploads", express.static(uploadDir));
+// Local uploads no longer served
 app.use(express.static(root, { index: "index.html" }));
 
 const tokenFor = user => jwt.sign({ sub: user.id, role: user.role, username: user.username }, jwtSecret, { expiresIn: "8h" });
@@ -187,14 +197,10 @@ app.post("/api/payouts", authenticate, allow("admin"), async (req, res, next) =>
     res.status(201).json({ payout });
   } catch (error) { next(error); }
 });
-app.post("/api/uploads", authenticate, upload.single("image"), async (req, res) => {
+app.post("/api/uploads", authenticate, upload.single("image"), (req, res) => {
   if (!req.file) return res.status(400).json({ error: "Upload an image smaller than 5 MB." });
-  const type = await fileTypeFromFile(req.file.path);
-  if (!type || !allowedImageTypes.has(type.mime)) {
-    unlinkSync(req.file.path);
-    return res.status(400).json({ error: "File must be a valid image." });
-  }
-  res.status(201).json({ url: `/uploads/${req.file.filename}` });
+  // req.file.path contains the secure Cloudinary URL
+  res.status(201).json({ url: req.file.path });
 });
 app.use((error, _req, res, _next) => {
   console.error(error);
