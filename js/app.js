@@ -1,6 +1,6 @@
 
 /* =========================================================
-   Smart Civic â€” front-end prototype
+   VETRI Namma Kural ? front-end prototype
    Three roles (resident, department staff, administrator)
    share one ledger of reported problems, persisted to
    localStorage so the full flow can be demoed in one browser.
@@ -53,7 +53,7 @@ function makeStore(kind) {
     store.removeItem(probe);
     return { store, persistent: true };
   } catch (error) {
-    console.warn(`[Smart Civic] ${kind} is unavailable â€” falling back to in-memory storage.`);
+    console.warn(`[VETRI Namma Kural] ${kind} is unavailable ? falling back to in-memory storage.`);
     return {
       persistent: false,
       store: {
@@ -66,6 +66,65 @@ function makeStore(kind) {
 }
 const localStore = makeStore("localStorage");
 const sessionStore = makeStore("sessionStorage");
+/* Same-origin on port 5000; also works when the UI is previewed via another dev server. */
+const API_BASE = location.port === "5000"
+  ? "/api"
+  : `http://${location.hostname || "localhost"}:5000/api`;
+
+async function api(path, options = {}) {
+  const session = getSession();
+  const response = await fetch(API_BASE + path, {
+    ...options,
+    headers: {
+      ...(options.body && !(options.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
+      ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "Request failed.");
+  return data;
+}
+async function uploadPhoto(dataUrl) {
+  if (!dataUrl) return null;
+  const blob = await (await fetch(dataUrl)).blob();
+  const form = new FormData();
+  form.append("image", blob, "report-image.jpg");
+  const { url } = await api("/uploads", { method: "POST", body: form });
+  return url;
+}
+
+function mapReport(report) {
+  return {
+    apiId: report._id,
+    id: `PR-${String(report._id).slice(-6).toUpperCase()}`,
+    title: report.title, description: report.description, category: report.category,
+    photo: report.photoUrl || null, status: report.status, priority: report.priority,
+    citizen: report.citizen?.username, citizenName: report.citizen?.name,
+    assignedTo: report.assignedTo?.username || null, assignedToName: report.assignedTo?.name || null,
+    department: report.assignedTo?.department || null,
+    createdAt: new Date(report.createdAt).getTime(),
+    assignedAt: report.assignedAt ? new Date(report.assignedAt).getTime() : null,
+    completedAt: report.completedAt ? new Date(report.completedAt).getTime() : null,
+    completionPhoto: report.completionPhotoUrl || null,
+    updates: (report.updates || []).map(u => ({ id: String(u._id), text: u.note, percent: u.percent, photo: u.photoUrl || null, timestamp: new Date(u.createdAt).getTime(), author: u.author?.name || "Staff" })),
+    rating: report.rating?.score || null, feedback: report.rating?.feedback || null,
+    ratedAt: report.rating?.createdAt ? new Date(report.rating.createdAt).getTime() : null,
+  };
+}
+async function refreshFromApi() {
+  const { user: me } = await api("/auth/me");
+  const meIndex = db.users.findIndex(user => user.username === me.username);
+  const mappedMe = { ...me, apiId: me.id, password: "" };
+  if (meIndex >= 0) db.users[meIndex] = { ...db.users[meIndex], ...mappedMe };
+  else db.users.push(mappedMe);
+  const { reports } = await api("/reports");
+  db.problems = reports.map(mapReport);
+  if (getSession()?.role === "admin") {
+    const { users } = await api("/users");
+    db.users = users.map(user => ({ ...user, apiId: user.id, password: "" }));
+  }
+}
 
 /* ---------------- Seed data ---------------- */
 
@@ -259,7 +318,7 @@ function loadDB() {
   let raw = null;
   try { raw = localStore.store.getItem(DB_KEY); } catch (error) { console.warn("Unable to read saved reports.", error); }
   if (raw) {
-    try { return normalizeDB(JSON.parse(raw)); } catch (error) { console.warn("Saved reports were unreadable â€” reseeding.", error); }
+    try { return normalizeDB(JSON.parse(raw)); } catch (error) { console.warn("Saved reports were unreadable ? reseeding.", error); }
   }
   const fresh = seedDB();
   persist(fresh);
@@ -309,7 +368,7 @@ window.addEventListener("storage", (event) => {
 });
 
 /* A change arriving from another tab must not wipe what the person
-   is typing â€” defer the repaint until the field loses focus. */
+   is typing ? defer the repaint until the field loses focus. */
 let pendingSyncRender = false;
 function renderFromSync() {
   const active = document.activeElement;
@@ -344,8 +403,8 @@ function getSession() {
     return raw ? JSON.parse(raw) : null;
   } catch (error) { return null; }
 }
-function setSession(username) {
-  try { sessionStore.store.setItem(SESSION_KEY, JSON.stringify({ username })); } catch (error) { /* ignore */ }
+function setSession(session) {
+  try { sessionStore.store.setItem(SESSION_KEY, JSON.stringify(session)); } catch (error) { /* ignore */ }
 }
 function clearSession() {
   try { sessionStore.store.removeItem(SESSION_KEY); } catch (error) { /* ignore */ }
@@ -386,7 +445,7 @@ function esc(value) {
 }
 
 function timeAgo(ts) {
-  if (!ts) return "â€”";
+  if (!ts) return "?";
   const diff = Date.now() - ts;
   const mins = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);
@@ -398,13 +457,13 @@ function timeAgo(ts) {
   return fmtDateShort(ts);
 }
 function fmtDate(ts) {
-  if (!ts) return "â€”";
+  if (!ts) return "?";
   const d = new Date(ts);
-  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) + " Â· " +
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) + " ? " +
     d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 function fmtDateShort(ts) {
-  if (!ts) return "â€”";
+  if (!ts) return "?";
   return new Date(ts).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 function toast(message) {
@@ -477,16 +536,17 @@ function withBusy(button, busyLabel, work) {
   button.setAttribute("aria-busy", "true");
   const original = button.textContent;
   button.textContent = busyLabel;
-  try {
-    work();
-  } finally {
+  Promise.resolve(work()).catch(error => {
+    console.error(error);
+    toast(error.message || "Could not save your change.");
+  }).finally(() => {
     if (button.isConnected) {
       button.dataset.busy = "";
       button.disabled = false;
       button.removeAttribute("aria-busy");
       button.textContent = original;
     }
-  }
+  });
 }
 
 function resizeImageFile(file, maxDim, onData, onError) {
@@ -515,7 +575,7 @@ function wireDropZone(zoneEl, onData) {
   const acceptFile = (file) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) { toast("Please choose an image file."); return; }
-    if (file.size > 12 * 1024 * 1024) { toast("That image is larger than 12 MB â€” please pick a smaller one."); return; }
+    if (file.size > 12 * 1024 * 1024) { toast("That image is larger than 12 MB ? please pick a smaller one."); return; }
     resizeImageFile(file, 720, onData, () => toast("We couldn't read that image. Try another file."));
   };
   const openPicker = () => {
@@ -583,10 +643,14 @@ function startRelativeTimeTicker() {
 
 /* ---------------- Auth ---------------- */
 
-function attemptLogin(username, password) {
-  const user = db.users.find(u => u.username === username && u.password === password);
-  if (!user) return false;
-  setSession(username);
+async function attemptLogin(username, password) {
+  const result = await api("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
+  const user = { ...result.user, apiId: result.user.id, password: "" };
+  const index = db.users.findIndex(member => member.username === user.username);
+  if (index >= 0) db.users[index] = { ...db.users[index], ...user };
+  else db.users.push(user);
+  setSession({ username: user.username, role: user.role, token: result.token });
+  await refreshFromApi();
   ui.view = "overview";
   ui.detailId = null;
   ui.sidebarOpen = false;
@@ -621,7 +685,7 @@ function render() {
   try {
     app.appendChild(renderShell(user));
   } catch (error) {
-    console.error("Smart Civic render error:", error);
+    console.error("VETRI Namma Kural render error:", error);
     ui.detailId = null;
     app.innerHTML = "";
     const recovery = el(`<div class="render-recovery">
@@ -642,9 +706,9 @@ const DEMO_ACCOUNTS = {
     { u: "citizen_maya", p: "citizen123", label: "Maya Iyer" },
   ],
   staff: [
-    { u: "staff_amara", p: "staff123", label: "Amara Okoye Â· Sanitation" },
-    { u: "staff_kofi", p: "staff123", label: "Kofi Boateng Â· Roads" },
-    { u: "staff_priya", p: "staff123", label: "Priya Nair Â· Water" },
+    { u: "staff_amara", p: "staff123", label: "Amara Okoye ? Sanitation" },
+    { u: "staff_kofi", p: "staff123", label: "Kofi Boateng ? Roads" },
+    { u: "staff_priya", p: "staff123", label: "Priya Nair ? Water" },
   ],
   admin: [
     { u: "admin", p: "admin123", label: "S. Fernandes" },
@@ -658,16 +722,41 @@ function renderLogin() {
   const shell = wrap.firstElementChild;
 
   const tabs = shell.querySelectorAll(".role-tab");
+  const roleTabs = shell.querySelector("#login-role-tabs");
   const demoBox = shell.querySelector("#login-demo");
   const form = shell.querySelector("#login-form");
   const errorEl = shell.querySelector("#login-error");
   const usernameInput = shell.querySelector("#login-username");
   const passwordInput = shell.querySelector("#login-password");
+  const registerForm = shell.querySelector("#register-form");
+  const registerError = shell.querySelector("#register-error");
+
+  shell.querySelector("#show-register").addEventListener("click", () => {
+    shell.classList.add("is-registering");
+    form.hidden = true;
+    registerForm.hidden = false;
+    roleTabs.hidden = true;
+    demoBox.hidden = true;
+    shell.querySelector(".login-divider").hidden = true;
+    shell.querySelector(".login-google").hidden = true;
+    shell.querySelector("#show-register").hidden = true;
+    shell.querySelector("#register-name").focus();
+  });
+  shell.querySelector("#show-login").addEventListener("click", () => {
+    shell.classList.remove("is-registering");
+    registerForm.hidden = true;
+    form.hidden = false;
+    roleTabs.hidden = false;
+    demoBox.hidden = false;
+    shell.querySelector(".login-divider").hidden = false;
+    shell.querySelector(".login-google").hidden = false;
+    shell.querySelector("#show-register").hidden = false;
+  });
 
   function renderDemo() {
     const list = DEMO_ACCOUNTS[ui.loginRoleTab];
     const heading = ui.loginRoleTab === "citizen" ? "resident" : ui.loginRoleTab;
-    demoBox.innerHTML = `<h4>Demo accounts â€” ${esc(heading)}</h4>
+    demoBox.innerHTML = `<h4>Demo accounts ? ${esc(heading)}</h4>
       <table>${list.map(a => `
         <tr>
           <td class="role">${esc(a.label)}</td>
@@ -694,7 +783,7 @@ function renderLogin() {
     });
   });
 
-  form.addEventListener("submit", (event) => {
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const username = usernameInput.value.trim();
     const password = passwordInput.value;
@@ -703,13 +792,45 @@ function renderLogin() {
       errorEl.textContent = "Enter both a username and a password.";
       return;
     }
-    if (attemptLogin(username, password)) {
+    try {
+      await attemptLogin(username, password);
       errorEl.hidden = true;
       render();
-    } else {
+    } catch (error) {
       errorEl.hidden = false;
-      errorEl.textContent = "Username or password not recognized.";
+      errorEl.textContent = error.message || "Username or password not recognized.";
       passwordInput.select();
+    }
+  });
+
+  registerForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const result = await api("/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          name: shell.querySelector("#register-name").value.trim(),
+          username: shell.querySelector("#register-username").value.trim(),
+          password: shell.querySelector("#register-password").value,
+        }),
+      });
+      registerForm.reset();
+      shell.classList.remove("is-registering");
+      registerForm.hidden = true;
+      form.hidden = false;
+      roleTabs.hidden = false;
+      demoBox.hidden = false;
+      shell.querySelector(".login-divider").hidden = false;
+      shell.querySelector(".login-google").hidden = false;
+      shell.querySelector("#show-register").hidden = false;
+      usernameInput.value = result.user.username;
+      passwordInput.value = "";
+      errorEl.hidden = false;
+      errorEl.textContent = "Account created. Sign in with your new password.";
+      passwordInput.focus();
+    } catch (error) {
+      registerError.hidden = false;
+      registerError.textContent = error.message || "Could not create your account.";
     }
   });
 
@@ -790,13 +911,13 @@ function renderShell(user) {
         <button class="hamburger-btn" id="hamburger-btn" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="app-sidebar">
           <span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
         </button>
-        <div class="topbar__brand"><span class="glyph" aria-hidden="true">SC</span> Smart Civic</div>
+        <div class="topbar__brand"><span class="glyph" aria-hidden="true">VK</span><span>VETRI <small>Namma Kural</small></span></div>
       </div>
       <div class="topbar__right">
         <div class="live-indicator" title="Report changes sync across open tabs"><span aria-hidden="true"></span>Live</div>
         <div style="text-align:right">
           <div class="topbar__user">${esc(user.name)}</div>
-          <div class="topbar__role">${ROLE_TITLE[user.role].toUpperCase()}${user.department ? " Â· " + esc(user.department) : ""}</div>
+          <div class="topbar__role">${ROLE_TITLE[user.role].toUpperCase()}${user.department ? " ? " + esc(user.department) : ""}</div>
         </div>
         <button class="btn btn--ghost btn--sm" id="logout-btn" type="button">Sign out</button>
       </div>
@@ -824,7 +945,7 @@ function renderShell(user) {
     });
     sidebar.appendChild(button);
   });
-  sidebar.appendChild(el(`<div class="sidebar__foot">Smart Civic is a demo prototype. Data lives only in this browser${localStore.persistent ? "" : " (preview mode: not saved)"}.</div>`));
+  sidebar.appendChild(el(`<div class="sidebar__foot">VETRI Namma Kural · community service portal${localStore.persistent ? "" : " (preview mode: not saved)"}.</div>`));
   wrap.appendChild(sidebar);
 
   shellRefs.sidebar = sidebar;
@@ -895,11 +1016,11 @@ function ledgerRow(p, opts = {}) {
         <div class="ledger-row__title"></div>
         <div class="ledger-row__meta">
           <span>${esc(p.category)}</span>
-          <span aria-hidden="true">Â·</span>
+          <span aria-hidden="true">?</span>
           ${opts.showCitizen
             ? `<span class="rel-time">Reported by ${esc(p.citizenName)}</span>`
             : `<span class="rel-time" data-ts="${p.createdAt}" title="${esc(fmtDate(p.createdAt))}">${esc(timeAgo(p.createdAt))}</span>`}
-          ${opts.showAssignee ? `<span aria-hidden="true">Â·</span><span>${p.assignedToName ? "Assigned to " + esc(p.assignedToName) : "Unassigned"}</span>` : ""}
+          ${opts.showAssignee ? `<span aria-hidden="true">?</span><span>${p.assignedToName ? "Assigned to " + esc(p.assignedToName) : "Unassigned"}</span>` : ""}
         </div>
         ${(pct > 0 || isDone) ? `<div class="progress-bar-wrap"><div class="progress-bar-fill${isDone ? " is-done" : ""}"></div></div>` : ""}
       </div>
@@ -955,15 +1076,15 @@ function renderProfile(main, user) {
       : `<div class="profile-readonly"><span>Account type</span><strong>Resident account</strong></div>
          <div class="profile-readonly"><span>Report visibility</span><strong>Only your submitted reports</strong></div>`;
 
-  main.appendChild(el(`<div class="page-head"><div><h2>My profile</h2><p class="sub">Your personal account and role information.</p></div></div>`));
+  main.appendChild(el(`<div class="profile-hero"><div><span class="profile-kicker">VETRI NAMMA KURAL</span><h2>My profile</h2><p>Manage your account, contact details and service access.</p></div><div class="profile-hero__badge"><strong>${esc(roleSummary.split(" ")[0])}</strong><span>${esc(roleSummary.replace(/^\S+\s*/, ""))}</span></div></div>`));
 
   const layout = el(`<div class="profile-layout"></div>`);
   layout.appendChild(el(`<aside class="profile-identity">
-    <div class="profile-avatar" aria-hidden="true">${esc(initials || "SC")}</div>
+    <div class="profile-avatar" aria-hidden="true">${esc(initials || "VK")}</div>
     <h3>${esc(user.name)}</h3>
     <p>${ROLE_TITLE[user.role]}</p>
-    <div class="profile-summary">${roleSummary}</div>
-    <div class="profile-username">@${esc(user.username)}</div>
+    <div class="profile-summary"><span class="profile-summary__dot"></span>${roleSummary}</div>
+    <div class="profile-username">@${esc(user.username)} <span>Verified account</span></div>
   </aside>`));
 
   const panel = el(`<section class="panel profile-details"><h3>Account details</h3></section>`);
@@ -985,7 +1106,7 @@ function renderProfile(main, user) {
     <button class="btn btn--primary" type="button" id="save-profile-btn">Save profile</button>
   `);
   panel.querySelector("#save-profile-btn").addEventListener("click", (event) => {
-    withBusy(event.currentTarget, "Savingâ€¦", () => {
+    withBusy(event.currentTarget, "Saving...", async () => {
       const name = panel.querySelector("#profile-name").value.trim();
       const email = panel.querySelector("#profile-email").value.trim();
       const phone = panel.querySelector("#profile-phone").value.trim();
@@ -993,7 +1114,8 @@ function renderProfile(main, user) {
       if (!name) { toast("Enter a display name."); return; }
       if (email && !/^\S+@\S+\.\S+$/.test(email)) { toast("Enter a valid email address."); return; }
       if (password && password.length < 6) { toast("Use at least 6 characters for the new password."); return; }
-      user.name = name;
+      const result = await api("/auth/me", { method: "PATCH", body: JSON.stringify({ name, email, phone, password }) });
+      Object.assign(user, result.user);
       user.email = email;
       user.phone = phone;
       if (password) user.password = password;
@@ -1051,21 +1173,21 @@ function renderCitizenOverview(main, user) {
   if (awaiting) {
     main.appendChild(el(`<div class="mark-notice">
       <strong>${awaiting} completed report${awaiting > 1 ? "s" : ""} waiting on your feedback.</strong>
-      <p>Open a completed report below to rate the service and leave feedback â€” your rating awards coins to the crew.</p>
+      <p>Open a completed report below to rate the service and leave feedback ? your rating awards coins to the crew.</p>
     </div>`));
   }
 
   main.appendChild(renderFilteredLedger(mine, {
     label: "My reports",
-    emptyText: "You haven't reported anything yet. Use â€œReport a problemâ€ to get started.",
+    emptyText: "You haven't reported anything yet. Use ?Report a problem? to get started.",
   }));
 }
 
 function renderCitizenNew(main, user) {
   main.appendChild(el(`
     <div class="page-head">
-      <div><h2>Report a problem</h2><p class="sub">Describe the issue clearly â€” this goes straight to the administrator's triage inbox.</p></div>
-      <button class="btn btn--ghost" id="back-btn" type="button">â† Back to my reports</button>
+      <div><h2>Report a problem</h2><p class="sub">Describe the issue clearly ? this goes straight to the administrator's triage inbox.</p></div>
+      <button class="btn btn--ghost" id="back-btn" type="button">? Back to my reports</button>
     </div>
   `));
   main.querySelector("#back-btn").addEventListener("click", () => { ui.view = "overview"; ui.reportPhoto = null; render(); });
@@ -1127,35 +1249,13 @@ function renderCitizenNew(main, user) {
     const title = titleInput.value.trim();
     const description = descInput.value.trim();
     if (!title || !description) { toast("Add a title and description before submitting."); return; }
-    withBusy(button, "Submittingâ€¦", () => {
-      const problem = {
-        id: nextId(),
-        title,
-        description,
-        category: categorySelect.value,
-        photo: ui.reportPhoto || null,
-        citizen: user.username,
-        citizenName: user.name,
-        status: "submitted",
-        priority: null,
-        assignedTo: null,
-        assignedToName: null,
-        department: null,
-        createdAt: Date.now(),
-        assignedAt: null,
-        completedAt: null,
-        updates: [],
-        completionPhoto: null,
-        rating: null,
-        feedback: null,
-        coinsAwarded: null,
-        ratedAt: null,
-      };
-      db.problems.unshift(problem);
-      saveDB();
+    withBusy(button, "Submitting...", async () => {
+      const photoUrl = await uploadPhoto(ui.reportPhoto);
+      await api("/reports", { method: "POST", body: JSON.stringify({ title, description, category: categorySelect.value, photoUrl }) });
+      await refreshFromApi();
       ui.reportPhoto = null;
       ui.view = "overview";
-      toast("Report submitted â€” the administrator will review it shortly.");
+      toast("Report submitted ? the administrator will review it shortly.");
       render();
     });
   });
@@ -1182,7 +1282,7 @@ function renderStaffOverview(main, user) {
   main.appendChild(renderFilteredLedger(mine, {
     showCitizen: true,
     label: "My assignments",
-    emptyText: "No open assignments right now â€” everything you've been given is finished.",
+    emptyText: "No open assignments right now ? everything you've been given is finished.",
   }));
 }
 
@@ -1210,7 +1310,7 @@ function renderStaffWallet(main, user) {
     <div class="stat-strip">
       <div class="stat accent"><div class="n anim-counter" id="coin-count">0</div><div class="l">Coin balance</div></div>
       <div class="stat"><div class="n anim-counter" id="jobs-count">0</div><div class="l">Jobs completed</div></div>
-      <div class="stat"><div class="n">${avgRating(user.username) ?? "â€”"}</div><div class="l">Average rating</div></div>
+      <div class="stat"><div class="n">${avgRating(user.username) ?? "?"}</div><div class="l">Average rating</div></div>
       <div class="stat"><div class="n anim-counter" id="pending-count">0</div><div class="l">Coins awaiting rating</div></div>
     </div>
   `);
@@ -1223,7 +1323,7 @@ function renderStaffWallet(main, user) {
   if (unrated.length) {
     main.appendChild(el(`<div class="mark-notice">
       <strong>${unrated.length} completed job${unrated.length > 1 ? "s" : ""} not rated yet.</strong>
-      <p>Coins are released as soon as the resident rates the work â€” up to ${potential} coins in total.</p>
+      <p>Coins are released as soon as the resident rates the work ? up to ${potential} coins in total.</p>
     </div>`));
   }
 
@@ -1232,7 +1332,7 @@ function renderStaffWallet(main, user) {
 
   const panel = el(`<div class="panel"><h3>Coin history</h3></div>`);
   const rows = [
-    ...earned.map(p => ({ ts: p.ratedAt, text: `Earned for â€œ${p.title}â€ (${p.rating}â˜… rating)`, delta: `+${p.coinsAwarded}` })),
+    ...earned.map(p => ({ ts: p.ratedAt, text: `Earned for ?${p.title}? (${p.rating}? rating)`, delta: `+${p.coinsAwarded}` })),
     ...spent.map(c => ({ ts: c.timestamp, text: "Converted to payout by administrator", delta: `-${c.coins}` })),
   ].sort((a, b) => b.ts - a.ts);
 
@@ -1271,7 +1371,7 @@ function renderAdminOverview(main, user) {
   const completed = db.problems.filter(p => p.status === "completed").length;
   const overdue = db.problems.filter(p => { const d = dueMeta(p); return d && d.level === "over"; }).length;
   const rated = db.problems.filter(p => p.rating);
-  const avg = rated.length ? (rated.reduce((sum, p) => sum + p.rating, 0) / rated.length).toFixed(1) : "â€”";
+  const avg = rated.length ? (rated.reduce((sum, p) => sum + p.rating, 0) / rated.length).toFixed(1) : "?";
 
   main.appendChild(el(`<div class="page-head"><div><h2>Overview</h2><p class="sub">City-wide status across all departments.</p></div></div>`));
 
@@ -1302,12 +1402,12 @@ function renderAdminOverview(main, user) {
 function renderAdminTriage(main, user) {
   const inbox = sortByUrgency(db.problems.filter(p => p.status === "submitted"));
   main.appendChild(el(`
-    <div class="page-head"><div><h2>Triage inbox</h2><p class="sub">New reports â€” set a priority and assign to a department staff member. Oldest and overdue first.</p></div></div>
+    <div class="page-head"><div><h2>Triage inbox</h2><p class="sub">New reports ? set a priority and assign to a department staff member. Oldest and overdue first.</p></div></div>
   `));
   main.appendChild(renderFilteredLedger(inbox, {
     showCitizen: true,
     label: "Triage inbox",
-    emptyText: "Nothing waiting â€” every submitted report has been triaged.",
+    emptyText: "Nothing waiting ? every submitted report has been triaged.",
   }));
 }
 
@@ -1348,7 +1448,7 @@ function renderAdminStaff(main, user) {
     <button class="btn btn--primary" type="button" id="add-staff-btn">Add staff member</button>
   `);
   form.querySelector("#add-staff-btn").addEventListener("click", (event) => {
-    withBusy(event.currentTarget, "Addingâ€¦", () => {
+    withBusy(event.currentTarget, "Adding...", async () => {
       const name = form.querySelector("#staff-name").value.trim();
       const department = form.querySelector("#staff-department").value;
       const requestedUsername = form.querySelector("#staff-username").value.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
@@ -1357,7 +1457,8 @@ function renderAdminStaff(main, user) {
       if (!name || !requestedUsername || !password) { toast("Add the name, username, and temporary password."); return; }
       if (password.length < 6) { toast("Use at least 6 characters for the temporary password."); return; }
       if (db.users.some(member => member.username === requestedUsername)) { toast("That username is already in use."); return; }
-      db.users.push({ username: requestedUsername, password, role: "staff", name, department, workTypes, coins: 0, createdAt: Date.now() });
+      await api("/users", { method: "POST", body: JSON.stringify({ username: requestedUsername, password, name, department, workTypes }) });
+      await refreshFromApi();
       saveDB();
       toast(`${name} was added to the ${department} team.`);
       render();
@@ -1388,7 +1489,7 @@ function renderAdminStaff(main, user) {
       <div class="staff-card__stats">
         <span><strong>${completed.length}</strong> completed</span>
         <span><strong>${open}</strong> open</span>
-        <span><strong>${avgRating(member.username) ?? "â€”"}</strong> rating</span>
+        <span><strong>${avgRating(member.username) ?? "?"}</strong> rating</span>
         <span class="coin">${member.coins}</span>
       </div>
       <div class="staff-card__label">Work types handled</div>
@@ -1417,14 +1518,16 @@ function renderAdminRewards(main, user) {
     const row = el(`<tr>
       <td>${esc(member.name)}</td>
       <td>${esc(member.department)}</td>
-      <td>${avgRating(member.username) ?? "â€”"}</td>
+      <td>${avgRating(member.username) ?? "?"}</td>
       <td class="coin">${member.coins}</td>
       <td style="text-align:right;">
         <button class="btn btn--sm btn--teal" ${member.coins <= 0 ? "disabled" : ""} data-user="${esc(member.username)}" type="button">Convert to payout</button>
       </td>
     </tr>`);
     row.querySelector("button").addEventListener("click", (event) => {
-      withBusy(event.currentTarget, "Convertingâ€¦", () => {
+      withBusy(event.currentTarget, "Converting...", async () => {
+        await api("/payouts", { method: "POST", body: JSON.stringify({ staffId: member.apiId || member.id }) });
+        await refreshFromApi();
         const amount = (member.coins / CASH_RATE).toFixed(2);
         db.conversions.unshift({
           id: "CV-" + Date.now(),
@@ -1486,7 +1589,7 @@ function renderDrawer(p, user) {
         <div class="drawer__id">${esc(p.id)}</div>
         <h3 style="margin-top:4px;">${esc(p.title)}</h3>
       </div>
-      <button class="btn btn--ghost btn--sm" id="close-drawer" type="button">Close âœ•</button>
+      <button class="btn btn--ghost btn--sm" id="close-drawer" type="button">Close ?</button>
     </div>
   `);
   head.querySelector("#close-drawer").addEventListener("click", closeDrawer);
@@ -1501,9 +1604,9 @@ function renderDrawer(p, user) {
 
   body.appendChild(el(`<div class="panel" style="margin-bottom:18px;">
     <div style="font-size:12px;color:var(--ink-faint);margin-bottom:10px;">
-      ${esc(p.category)} Â· Reported by ${esc(p.citizenName)} on ${esc(fmtDateShort(p.createdAt))}
-      ${p.assignedToName ? " Â· Assigned to " + esc(p.assignedToName) : ""}
-      ${resolvedIn ? " Â· Resolved in " + resolvedIn + " day" + (resolvedIn === 1 ? "" : "s") : ""}
+      ${esc(p.category)} ? Reported by ${esc(p.citizenName)} on ${esc(fmtDateShort(p.createdAt))}
+      ${p.assignedToName ? " ? Assigned to " + esc(p.assignedToName) : ""}
+      ${resolvedIn ? " ? Resolved in " + resolvedIn + " day" + (resolvedIn === 1 ? "" : "s") : ""}
     </div>
     <p style="line-height:1.6;font-size:14px;">${esc(p.description)}</p>
     ${p.photo ? `<div class="photo-preview"><img src="${p.photo}" alt="Photo attached to ${esc(p.id)}" style="width:100%;max-width:260px;height:auto;" /></div>` : ""}
@@ -1515,7 +1618,7 @@ function renderDrawer(p, user) {
 
   if (user.role === "admin" && (p.status === "assigned" || p.status === "in-progress")) {
     body.appendChild(el(`<div class="panel" style="margin-bottom:18px;font-size:12.5px;color:var(--ink-soft);">
-      Assigned to <strong>${esc(p.assignedToName)}</strong> (${esc(p.department || "â€”")}). Priority: <strong>${esc(priorityLabel(p.priority))}</strong>.
+      Assigned to <strong>${esc(p.assignedToName)}</strong> (${esc(p.department || "?")}). Priority: <strong>${esc(priorityLabel(p.priority))}</strong>.
     </div>`));
     body.appendChild(renderAssignmentPanel(p, { reassign: true }));
   }
@@ -1574,22 +1677,24 @@ function renderAssignmentPanel(p, { reassign }) {
 
   const staffOptions = db.users.filter(u => u.role === "staff");
   if (!staffOptions.length) {
-    panel.appendChild(el(`<p class="sub">No department staff exist yet â€” add someone in the staff directory first.</p>`));
+    panel.appendChild(el(`<p class="sub">No department staff exist yet ? add someone in the staff directory first.</p>`));
     return panel;
   }
 
   panel.appendChild(el(`<div class="field">
     <label class="label" for="assign-select">Assign to</label>
     <select id="assign-select">
-      ${staffOptions.map(s => `<option value="${esc(s.username)}" ${s.username === p.assignedTo ? "selected" : s.department === p.category && !p.assignedTo ? "selected" : ""}>${esc(s.name)} â€” ${esc(s.department)}</option>`).join("")}
+      ${staffOptions.map(s => `<option value="${esc(s.username)}" ${s.username === p.assignedTo ? "selected" : s.department === p.category && !p.assignedTo ? "selected" : ""}>${esc(s.name)} ? ${esc(s.department)}</option>`).join("")}
     </select>
   </div>`));
 
   const button = el(`<button class="btn btn--primary" type="button">${reassign ? "Update assignment" : "Set priority and assign"}</button>`);
   button.addEventListener("click", () => {
-    withBusy(button, "Savingâ€¦", () => {
+    withBusy(button, "Saving...", async () => {
       const staffUser = db.users.find(u => u.username === panel.querySelector("#assign-select").value);
       if (!staffUser) { toast("Pick a staff member to assign this to."); return; }
+      await api(`/reports/${p.apiId}/assignment`, { method: "PATCH", body: JSON.stringify({ staffId: staffUser.apiId || staffUser.id, priority: selectedPriority }) });
+      await refreshFromApi();
       const changedOwner = p.assignedTo !== staffUser.username;
       p.priority = selectedPriority;
       p.assignedTo = staffUser.username;
@@ -1659,7 +1764,10 @@ function renderStaffActionPanel(p) {
     const text = panel.querySelector("#update-note").value.trim();
     const percent = Math.max(0, Math.min(100, Number(slider.value) || 0));
     if (!text) { toast("Add a short note describing the update."); return; }
-    withBusy(addBtn, "Savingâ€¦", () => {
+    withBusy(addBtn, "Saving...", async () => {
+      const photoUrl = await uploadPhoto(ui.updatePhoto);
+      await api(`/reports/${p.apiId}/updates`, { method: "POST", body: JSON.stringify({ note: text, percent, photoUrl }) });
+      await refreshFromApi();
       p.updates.push({ id: "U" + Date.now(), text, percent, photo: ui.updatePhoto || null, timestamp: Date.now(), author: p.assignedToName });
       p.status = "in-progress";
       ui.updatePhoto = null;
@@ -1683,7 +1791,10 @@ function renderStaffActionPanel(p) {
 
   const completeBtn = el(`<button class="btn btn--ochre" type="button">Mark as completed</button>`);
   completeBtn.addEventListener("click", () => {
-    withBusy(completeBtn, "Completingâ€¦", () => {
+    withBusy(completeBtn, "Completing...", async () => {
+      const photoUrl = await uploadPhoto(ui.completionPhoto);
+      await api(`/reports/${p.apiId}/complete`, { method: "POST", body: JSON.stringify({ photoUrl }) });
+      await refreshFromApi();
       p.status = "completed";
       p.completedAt = Date.now();
       p.completionPhoto = ui.completionPhoto || null;
@@ -1715,7 +1826,7 @@ function renderTimeline(p) {
   if (p.assignedAt) {
     tl.appendChild(el(`<div class="timeline-step">
       <div class="timeline-step__head">
-        <span>Assigned to ${esc(p.assignedToName || "â€”")}</span>
+        <span>Assigned to ${esc(p.assignedToName || "?")}</span>
         <span class="timeline-step__time rel-time" data-ts="${p.assignedAt}" title="${esc(fmtDate(p.assignedAt))}">${esc(timeAgo(p.assignedAt))}</span>
       </div>
     </div>`));
@@ -1724,7 +1835,7 @@ function renderTimeline(p) {
   p.updates.forEach(u => {
     const step = el(`<div class="timeline-step">
       <div class="timeline-step__head">
-        <span>${u.percent}% â€” ${esc(u.author)}</span>
+        <span>${u.percent}% ? ${esc(u.author)}</span>
         <span class="timeline-step__time rel-time" data-ts="${u.timestamp}" title="${esc(fmtDate(u.timestamp))}">${esc(timeAgo(u.timestamp))}</span>
       </div>
       <div class="timeline-step__note"></div>
@@ -1741,7 +1852,7 @@ function renderTimeline(p) {
         <span>Rated by ${esc(p.citizenName)}</span>
         <span class="timeline-step__time rel-time" data-ts="${p.ratedAt}" title="${esc(fmtDate(p.ratedAt))}">${esc(timeAgo(p.ratedAt))}</span>
       </div>
-      <div class="timeline-step__note">${"â˜…".repeat(p.rating)}${"â˜†".repeat(5 - p.rating)}${p.feedback ? " â€” " + esc(p.feedback) : ""}</div>
+      <div class="timeline-step__note">${"?".repeat(p.rating)}${"?".repeat(5 - p.rating)}${p.feedback ? " ? " + esc(p.feedback) : ""}</div>
     </div>`));
   }
 
@@ -1754,7 +1865,7 @@ function renderRatingPanel(p) {
     return el(`<div class="panel">
       <h3>Your feedback</h3>
       <div class="stars readonly" role="img" aria-label="${p.rating} out of 5 stars">
-        ${[1, 2, 3, 4, 5].map(n => `<button type="button" disabled class="${n <= p.rating ? "is-filled" : ""}" tabindex="-1" aria-hidden="true">â˜…</button>`).join("")}
+        ${[1, 2, 3, 4, 5].map(n => `<button type="button" disabled class="${n <= p.rating ? "is-filled" : ""}" tabindex="-1" aria-hidden="true">?</button>`).join("")}
       </div>
       <p style="margin-top:8px;font-size:13.5px;color:var(--ink-soft);">${esc(p.feedback || "")}</p>
     </div>`);
@@ -1771,7 +1882,7 @@ function renderRatingPanel(p) {
   const stars = el(`<div class="stars" role="group" aria-label="Rating out of 5 stars"></div>`);
   const rewardLine = el(`<p style="margin-top:8px;font-size:12.5px;color:var(--ink-faint);"></p>`);
   for (let n = 1; n <= 5; n++) {
-    const button = el(`<button type="button" data-n="${n}" aria-label="${n} star${n > 1 ? "s" : ""}" aria-pressed="false">â˜…</button>`);
+    const button = el(`<button type="button" data-n="${n}" aria-label="${n} star${n > 1 ? "s" : ""}" aria-pressed="false">?</button>`);
     button.addEventListener("click", () => {
       rating = n;
       stars.querySelectorAll("button").forEach((s, i) => {
@@ -1792,7 +1903,9 @@ function renderRatingPanel(p) {
   const submit = el(`<button class="btn btn--primary" type="button">Submit rating</button>`);
   submit.addEventListener("click", () => {
     if (!rating) { toast("Choose a star rating first."); return; }
-    withBusy(submit, "Savingâ€¦", () => {
+    withBusy(submit, "Saving...", async () => {
+      await api(`/reports/${p.apiId}/rating`, { method: "POST", body: JSON.stringify({ score: rating, feedback: panel.querySelector("#feedback-text").value.trim() }) });
+      await refreshFromApi();
       p.rating = rating;
       p.feedback = panel.querySelector("#feedback-text").value.trim();
       p.ratedAt = Date.now();
@@ -1820,11 +1933,22 @@ document.addEventListener("keydown", (event) => {
 function showStorageNote() {
   if (document.querySelector(".storage-note")) return;
   const note = el(`<div class="storage-note" role="status"></div>`);
-  note.textContent = "Preview mode â€” reports stay in this tab and won't be saved.";
+  note.textContent = "Preview mode ? reports stay in this tab and won't be saved.";
   document.body.appendChild(note);
 }
 
-render();
 startRelativeTimeTicker();
-if (!localStore.persistent) showStorageNote();
+async function boot() {
+  if (getSession()?.token) {
+    try {
+      await refreshFromApi();
+    } catch (error) {
+      console.warn("Could not restore the signed-in session.", error);
+      clearSession();
+    }
+  }
+  render();
+  if (!localStore.persistent) showStorageNote();
+}
+boot();
 

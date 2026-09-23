@@ -6,7 +6,7 @@ function renderFilteredLedger(list, opts = {}) {
     <div class="work-list__controls">
       <label class="search-field">
         <span class="sr-only">Search reports</span>
-        <span aria-hidden="true">âŒ•</span>
+        <span aria-hidden="true">?</span>
         <input type="search" placeholder="Search by report, place, or category" />
       </label>
       <div class="filter-group" role="group" aria-label="Filter by status">
@@ -74,7 +74,7 @@ function renderFilteredLedger(list, opts = {}) {
         scopes.forEach(scope => highlightInElement(scope, query));
       }
     } else {
-      results.appendChild(el(`<div class="no-results"><span aria-hidden="true">âŒ•</span><strong>No matching reports</strong><p>Try another search or clear the status filter.</p><button class="btn btn--sm" type="button" data-reset>Clear filters</button></div>`));
+      results.appendChild(el(`<div class="no-results"><span aria-hidden="true">?</span><strong>No matching reports</strong><p>Try another search or clear the status filter.</p><button class="btn btn--sm" type="button" data-reset>Clear filters</button></div>`));
       const reset = results.querySelector("[data-reset]");
       if (reset) reset.addEventListener("click", () => {
         input.value = "";

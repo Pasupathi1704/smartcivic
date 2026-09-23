@@ -3,13 +3,14 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Smart Civic — Municipal Service Tracker</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏛️</text></svg>" />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%2343e4e0%22/><text x=%2250%22 y=%2268%22 text-anchor=%22middle%22 font-family=%22Arial%22 font-weight=%22700%22 font-size=%2248%22 fill=%22%23070b18%22>SC</text></svg>" />
+<title>VETRI Namma Kural</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>???</text></svg>" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%23C61A22%22/><text x=%2250%22 y=%2268%22 text-anchor=%22middle%22 font-family=%22Arial%22 font-weight=%22700%22 font-size=%2248%22 fill=%22%23FFD700%22>VK</text></svg>" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css" />
+<link rel="stylesheet" href="css/experience.css" />
 </head>
 <body>
 
@@ -19,14 +20,24 @@
 <template id="tpl-login">
   <div class="login-shell">
     <div class="login-mark">
-      <span class="login-mark__glyph">SC</span>
-      <div>
-        <h1>Smart Civic</h1>
-        <p>A shared ledger for reported problems, assigned work, and completed service.</p>
+      <div class="login-mark__content">
+        <span class="login-mark__eyebrow">மக்கள் குரல் · மக்கள் மாற்றம்</span>
+        <span class="login-mark__glyph" aria-hidden="true">VK</span>
+        <div>
+          <h1>VETRI <em>Namma Kural</em></h1>
+          <p>“Kural Koduppom. Maatram Konduvaruvom.”</p>
+        </div>
       </div>
+      <span class="login-mark__credit">Together for Tamil Nadu</span>
     </div>
 
     <div class="login-panel">
+      <div class="login-panel__intro">
+        <div class="login-panel__brand"><span>VETRI</span><strong>Namma Kural</strong></div>
+        <p class="login-panel__motto">Namma Kural, Namma Maatram.</p>
+        <h2>Welcome back!</h2>
+        <p>Log in to your account and continue making a difference.</p>
+      </div>
       <div class="login-panel__tabs" id="login-role-tabs" role="tablist" aria-label="Choose a demo role">
         <button type="button" class="role-tab is-active" data-role="citizen" aria-pressed="true">Resident</button>
         <button type="button" class="role-tab" data-role="staff" aria-pressed="false">Department staff</button>
@@ -36,14 +47,29 @@
       <form id="login-form" class="login-form" novalidate>
         <label>
           <span>Username</span>
-          <input type="text" id="login-username" autocomplete="username" required />
+          <input type="text" id="login-username" autocomplete="username" placeholder="Username / Mobile Number" required />
         </label>
         <label>
           <span>Password</span>
-          <input type="password" id="login-password" autocomplete="current-password" required />
+          <input type="password" id="login-password" autocomplete="current-password" placeholder="Password" required />
         </label>
+        <div class="login-options">
+          <label><input type="checkbox" checked /> <span>Remember me</span></label>
+          <button type="button" class="login-forgot">Forgot password?</button>
+        </div>
         <p class="login-error" id="login-error" role="alert" hidden></p>
-        <button type="submit" class="btn btn--primary btn--block">Sign in</button>
+        <button type="submit" class="btn btn--primary btn--block">Login <span aria-hidden="true">→</span></button>
+      </form>
+      <div class="login-divider"><span>OR</span></div>
+      <button class="login-google" type="button" disabled aria-label="Google sign-in is not available in this demo"><b>G</b> Continue with Google</button>
+      <button id="show-register" class="btn btn--ghost btn--block login-register-link" type="button">New here? <u>Create an Account</u> <span aria-hidden="true">›</span></button>
+      <form id="register-form" class="login-form" novalidate hidden>
+        <label><span>Full name</span><input id="register-name" type="text" autocomplete="name" required /></label>
+        <label><span>Username</span><input id="register-username" type="text" autocomplete="username" required /></label>
+        <label><span>Password</span><input id="register-password" type="password" autocomplete="new-password" required /></label>
+        <p class="login-error" id="register-error" role="alert" hidden></p>
+        <button type="submit" class="btn btn--primary btn--block">Create account</button>
+        <button id="show-login" class="btn btn--ghost btn--block" type="button">Back to sign in</button>
       </form>
 
       <div class="login-demo" id="login-demo"></div>
