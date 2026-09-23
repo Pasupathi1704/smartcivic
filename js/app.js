@@ -66,10 +66,8 @@ function makeStore(kind) {
 }
 const localStore = makeStore("localStorage");
 const sessionStore = makeStore("sessionStorage");
-/* Same-origin on port 5000; also works when the UI is previewed via another dev server. */
-const API_BASE = location.port === "5000"
-  ? "/api"
-  : `http://${location.hostname || "localhost"}:5000/api`;
+/* Always use relative /api — works locally on port 5000 and in production on Render. */
+const API_BASE = "/api";
 
 async function api(path, options = {}) {
   const session = getSession();
