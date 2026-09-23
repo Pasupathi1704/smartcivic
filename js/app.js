@@ -1,12 +1,12 @@
+
 /* =========================================================
-   Civic Register — a front-end prototype
+   Smart Civic â€” front-end prototype
    Three roles (resident, department staff, administrator)
-   sharing one ledger of reported problems, stored in
-   localStorage so the whole flow can be demoed from one
-   browser without a backend.
+   share one ledger of reported problems, persisted to
+   localStorage so the full flow can be demoed in one browser.
    ========================================================= */
 
-const DB_KEY = "civic_register_db_v1";
+const DB_KEY = "civic_register_db_v1";   // unchanged: existing data keeps working
 const SESSION_KEY = "civic_register_session_v1";
 
 const CATEGORIES = [
@@ -20,8 +20,52 @@ const CATEGORIES = [
 ];
 
 const PRIORITIES = ["low", "medium", "high", "critical"];
-const COIN_RATE = 10; // coins per rating star, on completion + feedback
-const CASH_RATE = 10; // coins per unit of currency on conversion
+const COIN_RATE = 10;   // coins per rating star
+const CASH_RATE = 10;   // coins per unit of currency
+const MAX_TITLE = 120;
+const MAX_DESC = 800;
+
+/* Target response time per category, in days. Used for the
+   overdue / due-soon signals; purely advisory, nothing is stored. */
+const SLA_DAYS = {
+  "Sanitation & Waste": 2,
+  "Roads & Infrastructure": 7,
+  "Water Supply": 2,
+  "Electricity": 3,
+  "Public Safety": 1,
+  "Parks & Environment": 5,
+  "Other": 5,
+};
+
+const DAY_MS = 86400000;
+const PRIORITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
+
+/* ---------------- Storage (with graceful fallback) ----------------
+   Browsers block Web Storage in sandboxed frames and some private
+   modes, and touching it throws. Falling back to memory keeps the
+   prototype usable instead of crashing before the login screen. */
+const memoryStore = new Map();
+function makeStore(kind) {
+  try {
+    const store = window[kind];
+    const probe = "__sc_probe__";
+    store.setItem(probe, "1");
+    store.removeItem(probe);
+    return { store, persistent: true };
+  } catch (error) {
+    console.warn(`[Smart Civic] ${kind} is unavailable â€” falling back to in-memory storage.`);
+    return {
+      persistent: false,
+      store: {
+        getItem: key => (memoryStore.has(`${kind}:${key}`) ? memoryStore.get(`${kind}:${key}`) : null),
+        setItem: (key, value) => memoryStore.set(`${kind}:${key}`, String(value)),
+        removeItem: key => memoryStore.delete(`${kind}:${key}`),
+      },
+    };
+  }
+}
+const localStore = makeStore("localStorage");
+const sessionStore = makeStore("sessionStorage");
 
 /* ---------------- Seed data ---------------- */
 
@@ -36,7 +80,6 @@ function seedDB() {
   ];
 
   const now = Date.now();
-  const day = 86400000;
 
   const problems = [
     {
@@ -52,18 +95,18 @@ function seedDB() {
       assignedTo: "staff_amara",
       assignedToName: "Amara Okoye",
       department: "Sanitation & Waste",
-      createdAt: now - 6 * day,
-      assignedAt: now - 5 * day,
-      completedAt: now - 3 * day,
+      createdAt: now - 6 * DAY_MS,
+      assignedAt: now - 5 * DAY_MS,
+      completedAt: now - 3 * DAY_MS,
       updates: [
-        { id: "U1", text: "Assigned to sanitation crew for collection.", percent: 20, photo: null, timestamp: now - 5 * day, author: "Amara Okoye" },
-        { id: "U2", text: "Bin cleared and area swept.", percent: 100, photo: null, timestamp: now - 3 * day, author: "Amara Okoye" },
+        { id: "U1", text: "Assigned to sanitation crew for collection.", percent: 20, photo: null, timestamp: now - 5 * DAY_MS, author: "Amara Okoye" },
+        { id: "U2", text: "Bin cleared and area swept.", percent: 100, photo: null, timestamp: now - 3 * DAY_MS, author: "Amara Okoye" },
       ],
       completionPhoto: null,
       rating: 4,
       feedback: "Handled quickly once assigned. Would be good to fix the collection schedule so this doesn't recur.",
       coinsAwarded: 40,
-      ratedAt: now - 2 * day,
+      ratedAt: now - 2 * DAY_MS,
     },
     {
       id: "PR-1002",
@@ -78,12 +121,12 @@ function seedDB() {
       assignedTo: "staff_kofi",
       assignedToName: "Kofi Boateng",
       department: "Roads & Infrastructure",
-      createdAt: now - 4 * day,
-      assignedAt: now - 3 * day,
+      createdAt: now - 4 * DAY_MS,
+      assignedAt: now - 3 * DAY_MS,
       completedAt: null,
       updates: [
-        { id: "U3", text: "Site inspected, marked for patching. Materials ordered.", percent: 30, photo: null, timestamp: now - 2 * day, author: "Kofi Boateng" },
-        { id: "U4", text: "Patching started, one lane open.", percent: 65, photo: null, timestamp: now - 1 * day, author: "Kofi Boateng" },
+        { id: "U3", text: "Site inspected, marked for patching. Materials ordered.", percent: 30, photo: null, timestamp: now - 2 * DAY_MS, author: "Kofi Boateng" },
+        { id: "U4", text: "Patching started, one lane open.", percent: 65, photo: null, timestamp: now - 1 * DAY_MS, author: "Kofi Boateng" },
       ],
       completionPhoto: null,
       rating: null,
@@ -104,7 +147,7 @@ function seedDB() {
       assignedTo: null,
       assignedToName: null,
       department: null,
-      createdAt: now - 1 * day,
+      createdAt: now - 1 * DAY_MS,
       assignedAt: null,
       completedAt: null,
       updates: [],
@@ -127,10 +170,36 @@ function seedDB() {
       assignedTo: "staff_kofi",
       assignedToName: "Kofi Boateng",
       department: "Roads & Infrastructure",
-      createdAt: now - 2 * day,
-      assignedAt: now - 1 * day,
+      createdAt: now - 2 * DAY_MS,
+      assignedAt: now - DAY_MS,
       completedAt: null,
       updates: [],
+      completionPhoto: null,
+      rating: null,
+      feedback: null,
+      coinsAwarded: null,
+      ratedAt: null,
+    },
+    {
+      /* Deliberately past its category SLA so the overdue signal is visible. */
+      id: "PR-1005",
+      title: "Burst pipe flooding the footpath on MG Road",
+      description: "A pipe joint outside the bakery has been leaking continuously; water is pooling across the footpath and into the gutter.",
+      category: "Water Supply",
+      photo: null,
+      citizen: "citizen_maya",
+      citizenName: "Maya Iyer",
+      status: "in-progress",
+      priority: "high",
+      assignedTo: "staff_priya",
+      assignedToName: "Priya Nair",
+      department: "Water Supply",
+      createdAt: now - 5 * DAY_MS,
+      assignedAt: now - 4 * DAY_MS,
+      completedAt: null,
+      updates: [
+        { id: "U5", text: "Valve partially closed to reduce flow. Replacement joint ordered.", percent: 40, photo: null, timestamp: now - 3 * DAY_MS, author: "Priya Nair" },
+      ],
       completionPhoto: null,
       rating: null,
       feedback: null,
@@ -140,31 +209,24 @@ function seedDB() {
   ];
 
   const conversions = [
-    { id: "CV-1", staff: "staff_kofi", staffName: "Kofi Boateng", coins: 30, amount: 3, timestamp: now - 4 * day },
+    { id: "CV-1", staff: "staff_kofi", staffName: "Kofi Boateng", coins: 30, amount: 3, timestamp: now - 4 * DAY_MS },
   ];
 
-  return { users, problems, conversions, seq: 1005 };
-}
-
-function loadDB() {
-  const raw = localStorage.getItem(DB_KEY);
-  if (raw) {
-    try { return normalizeDB(JSON.parse(raw)); } catch (e) { /* fall through to reseed */ }
-  }
-  const db = seedDB();
-  localStorage.setItem(DB_KEY, JSON.stringify(db));
-  return db;
+  return { users, problems, conversions, seq: 1006 };
 }
 
 function normalizeDB(database) {
+  if (!database || typeof database !== "object") database = {};
   database.users = Array.isArray(database.users) ? database.users : [];
   database.users.forEach(user => {
+    user.name = typeof user.name === "string" && user.name.trim() ? user.name : "Unnamed user";
     if (user.role === "staff") {
       user.workTypes = Array.isArray(user.workTypes) ? user.workTypes : [];
       user.coins = Number(user.coins) || 0;
     }
   });
   database.problems = (Array.isArray(database.problems) ? database.problems : []).map(problem => ({
+    title: "Untitled report",
     description: "",
     photo: null,
     priority: null,
@@ -178,46 +240,98 @@ function normalizeDB(database) {
     feedback: null,
     coinsAwarded: null,
     ratedAt: null,
-    updates: [],
     ...problem,
     updates: Array.isArray(problem.updates) ? problem.updates : [],
   }));
   database.conversions = Array.isArray(database.conversions) ? database.conversions : [];
-  database.seq = Number.isFinite(database.seq) ? database.seq : 1005;
+
+  /* Derive the id counter from real data so externally edited stores
+     can never hand out a duplicate report id. */
+  const highest = database.problems.reduce((max, problem) => {
+    const n = Number(String(problem.id || "").replace(/\D/g, ""));
+    return Number.isFinite(n) ? Math.max(max, n) : max;
+  }, 1000);
+  database.seq = Math.max(Number(database.seq) || 0, highest + 1);
   return database;
 }
 
+function loadDB() {
+  let raw = null;
+  try { raw = localStore.store.getItem(DB_KEY); } catch (error) { console.warn("Unable to read saved reports.", error); }
+  if (raw) {
+    try { return normalizeDB(JSON.parse(raw)); } catch (error) { console.warn("Saved reports were unreadable â€” reseeding.", error); }
+  }
+  const fresh = seedDB();
+  persist(fresh);
+  return fresh;
+}
+
+function persist(database) {
+  try {
+    localStore.store.setItem(DB_KEY, JSON.stringify(database));
+  } catch (error) {
+    console.warn("Unable to save reports (storage full or blocked).", error);
+  }
+}
+
 function saveDB() {
-  localStorage.setItem(DB_KEY, JSON.stringify(db));
-  if (liveSync) liveSync.postMessage(db);
+  persist(db);
+  if (liveSync) {
+    try { liveSync.postMessage(db); } catch (error) { /* channel closed */ }
+  }
 }
 
 let db = loadDB();
 
 /* --- Live sync across tabs --- */
-const liveSync = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("civic-register-live") : null;
+let liveSync = null;
+try {
+  liveSync = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("civic-register-live") : null;
+} catch (error) {
+  liveSync = null;
+}
 if (liveSync) {
   liveSync.onmessage = (event) => {
     db = normalizeDB(event.data);
     pulseLiveIndicator();
-    render();
+    renderFromSync();
   };
 }
 window.addEventListener("storage", (event) => {
-  if (event.key === DB_KEY && event.newValue) {
-    try {
-      db = normalizeDB(JSON.parse(event.newValue));
-      pulseLiveIndicator();
-      render();
-    } catch (error) { console.warn("Unable to sync saved reports.", error); }
+  if (event.key !== DB_KEY || !event.newValue) return;
+  try {
+    db = normalizeDB(JSON.parse(event.newValue));
+    pulseLiveIndicator();
+    renderFromSync();
+  } catch (error) {
+    console.warn("Unable to sync saved reports.", error);
   }
 });
+
+/* A change arriving from another tab must not wipe what the person
+   is typing â€” defer the repaint until the field loses focus. */
+let pendingSyncRender = false;
+function renderFromSync() {
+  const active = document.activeElement;
+  const typing = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA") && active.closest("#app");
+  if (typing) {
+    if (pendingSyncRender) return;
+    pendingSyncRender = true;
+    active.addEventListener("blur", () => {
+      if (!pendingSyncRender) return;
+      pendingSyncRender = false;
+      render();
+    }, { once: true });
+    return;
+  }
+  render();
+}
 
 function pulseLiveIndicator() {
   const ind = document.querySelector(".live-indicator");
   if (!ind) return;
   ind.classList.remove("is-syncing");
-  void ind.offsetWidth; // force reflow to restart animation
+  void ind.offsetWidth; // restart the animation
   ind.classList.add("is-syncing");
   setTimeout(() => ind.classList.remove("is-syncing"), 1900);
 }
@@ -225,15 +339,21 @@ function pulseLiveIndicator() {
 /* ---------------- Session ---------------- */
 
 function getSession() {
-  const raw = sessionStorage.getItem(SESSION_KEY);
-  return raw ? JSON.parse(raw) : null;
+  try {
+    const raw = sessionStore.store.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) { return null; }
 }
-function setSession(username) { sessionStorage.setItem(SESSION_KEY, JSON.stringify({ username })); }
-function clearSession() { sessionStorage.removeItem(SESSION_KEY); }
+function setSession(username) {
+  try { sessionStore.store.setItem(SESSION_KEY, JSON.stringify({ username })); } catch (error) { /* ignore */ }
+}
+function clearSession() {
+  try { sessionStore.store.removeItem(SESSION_KEY); } catch (error) { /* ignore */ }
+}
 function currentUser() {
-  const s = getSession();
-  if (!s) return null;
-  return db.users.find(u => u.username === s.username) || null;
+  const session = getSession();
+  if (!session) return null;
+  return db.users.find(u => u.username === session.username) || null;
 }
 
 /* ---------------- UI state ---------------- */
@@ -248,6 +368,11 @@ const ui = {
   sidebarOpen: false,
 };
 
+/* Live handles to the shell chrome, so Escape and the overlay can act
+   on whatever is on screen without relying on closure hoisting. */
+let shellRefs = { sidebar: null, hamburger: null, overlay: null };
+let lastFocus = null;
+
 /* ---------------- Helpers ---------------- */
 
 function el(html) {
@@ -256,42 +381,46 @@ function el(html) {
   return t.content.firstElementChild;
 }
 
-/* ── Dynamic #7: Relative timestamps ── */
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 function timeAgo(ts) {
-  if (!ts) return "—";
+  if (!ts) return "â€”";
   const diff = Date.now() - ts;
   const mins = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
+  const days = Math.floor(diff / DAY_MS);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
   if (hours < 24) return `${hours}h ago`;
   if (days < 7) return `${days}d ago`;
   return fmtDateShort(ts);
 }
-
 function fmtDate(ts) {
-  if (!ts) return "—";
+  if (!ts) return "â€”";
   const d = new Date(ts);
-  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) + " · " +
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) + " Â· " +
     d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 function fmtDateShort(ts) {
-  if (!ts) return "—";
+  if (!ts) return "â€”";
   return new Date(ts).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
-function escapeHtml(s) {
-  return String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-function toast(msg) {
+function toast(message) {
   document.querySelectorAll(".toast").forEach(t => t.remove());
-  const t = el(`<div class="toast">${escapeHtml(msg)}</div>`);
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2600);
+  const node = el(`<div class="toast" role="status"></div>`);
+  node.textContent = message;
+  document.body.appendChild(node);
+  setTimeout(() => node.remove(), 2600);
 }
 function nextId() {
-  db.seq += 1;
-  return "PR-" + db.seq;
+  let candidate;
+  do {
+    db.seq += 1;
+    candidate = "PR-" + db.seq;
+  } while (db.problems.some(p => p.id === candidate));
+  return candidate;
 }
 function statusLabel(s) {
   return { submitted: "Submitted", assigned: "Assigned", "in-progress": "In progress", completed: "Completed" }[s] || s;
@@ -299,76 +428,157 @@ function statusLabel(s) {
 function priorityLabel(p) {
   return p ? p[0].toUpperCase() + p.slice(1) : "Not set";
 }
-function resizeImageFile(file, maxDim, cb) {
+function latestPercent(p) {
+  if (p.status === "completed") return 100;
+  if (!p.updates || !p.updates.length) return 0;
+  return p.updates[p.updates.length - 1].percent || 0;
+}
+function avgRating(staffUsername) {
+  const rated = db.problems.filter(p => p.assignedTo === staffUsername && p.rating);
+  if (!rated.length) return null;
+  return (rated.reduce((sum, p) => sum + p.rating, 0) / rated.length).toFixed(1);
+}
+
+/* SLA signal derived from category target + report age. */
+function dueMeta(p) {
+  if (!p || p.status === "completed") return null;
+  const limitMs = (SLA_DAYS[p.category] ?? 5) * DAY_MS;
+  const age = Date.now() - p.createdAt;
+  if (age > limitMs) {
+    const late = Math.max(1, Math.ceil((age - limitMs) / DAY_MS));
+    return { level: "over", label: `Overdue ${late}d` };
+  }
+  if (age > limitMs * 0.7) return { level: "soon", label: "Due soon" };
+  return null;
+}
+function dueTag(p) {
+  const due = dueMeta(p);
+  if (!due) return "";
+  return `<span class="tag tag--due-${due.level}">${esc(due.label)}</span>`;
+}
+/* Overdue first, then by priority, then oldest first. */
+function sortByUrgency(list) {
+  return [...list].sort((a, b) => {
+    const dueA = dueMeta(a) ? (dueMeta(a).level === "over" ? 0 : 1) : 2;
+    const dueB = dueMeta(b) ? (dueMeta(b).level === "over" ? 0 : 1) : 2;
+    if (dueA !== dueB) return dueA - dueB;
+    const rankA = PRIORITY_RANK[a.priority] ?? 4;
+    const rankB = PRIORITY_RANK[b.priority] ?? 4;
+    if (rankA !== rankB) return rankA - rankB;
+    return a.createdAt - b.createdAt;
+  });
+}
+
+/* Guard against double-submits without leaving a dead button behind. */
+function withBusy(button, busyLabel, work) {
+  if (!button || button.dataset.busy === "1") return;
+  button.dataset.busy = "1";
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  const original = button.textContent;
+  button.textContent = busyLabel;
+  try {
+    work();
+  } finally {
+    if (button.isConnected) {
+      button.dataset.busy = "";
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+      button.textContent = original;
+    }
+  }
+}
+
+function resizeImageFile(file, maxDim, onData, onError) {
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onerror = () => onError && onError();
+  reader.onload = (event) => {
     const img = new Image();
+    img.onerror = () => onError && onError();
     img.onload = () => {
       let { width, height } = img;
       if (width > height && width > maxDim) { height *= maxDim / width; width = maxDim; }
       else if (height > maxDim) { width *= maxDim / height; height = maxDim; }
       const canvas = document.createElement("canvas");
-      canvas.width = width; canvas.height = height;
-      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
-      cb(canvas.toDataURL("image/jpeg", 0.72));
+      canvas.width = Math.round(width);
+      canvas.height = Math.round(height);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      onData(canvas.toDataURL("image/jpeg", 0.72));
     };
-    img.src = e.target.result;
+    img.src = event.target.result;
   };
   reader.readAsDataURL(file);
 }
+
+/* Click, keyboard, and drag-and-drop all feed the same handler. */
 function wireDropZone(zoneEl, onData) {
-  zoneEl.addEventListener("click", () => {
+  const acceptFile = (file) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { toast("Please choose an image file."); return; }
+    if (file.size > 12 * 1024 * 1024) { toast("That image is larger than 12 MB â€” please pick a smaller one."); return; }
+    resizeImageFile(file, 720, onData, () => toast("We couldn't read that image. Try another file."));
+  };
+  const openPicker = () => {
     const input = document.createElement("input");
-    input.type = "file"; input.accept = "image/*";
-    input.onchange = () => { if (input.files[0]) resizeImageFile(input.files[0], 640, onData); };
+    input.type = "file";
+    input.accept = "image/*";
+    input.addEventListener("change", () => {
+      if (input.files && input.files[0]) acceptFile(input.files[0]);
+    });
     input.click();
+  };
+
+  zoneEl.setAttribute("role", "button");
+  zoneEl.tabIndex = 0;
+  zoneEl.addEventListener("click", openPicker);
+  zoneEl.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openPicker();
+  });
+  zoneEl.addEventListener("dragover", (event) => { event.preventDefault(); zoneEl.classList.add("is-dragging"); });
+  zoneEl.addEventListener("dragleave", () => zoneEl.classList.remove("is-dragging"));
+  zoneEl.addEventListener("drop", (event) => {
+    event.preventDefault();
+    zoneEl.classList.remove("is-dragging");
+    const file = event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files[0] : null;
+    acceptFile(file);
   });
 }
 
-/* ── Dynamic #3 & #6: Animated counter ── */
-function animateCount(el, target, duration = 900) {
+const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function animateCount(node, target, duration = 900) {
+  if (!node) return;
+  if (reduceMotion || !Number.isFinite(target)) { node.textContent = String(target); return; }
   const start = performance.now();
-  const from = 0;
   function step(now) {
     const progress = Math.min((now - start) / duration, 1);
-    // ease-out cubic
-    const eased = 1 - Math.pow(1 - progress, 3);
-    el.textContent = Math.round(from + (target - from) * eased);
+    const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+    node.textContent = String(Math.round(target * eased));
     if (progress < 1) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
 }
 
-/* ── Dynamic #1: Progress bar builder ── */
-function buildProgressBar(percent, isDone) {
-  const wrap = el(`<div></div>`);
-  wrap.innerHTML = `
-    <div class="progress-bar-wrap">
-      <div class="progress-bar-fill${isDone ? " is-done" : ""}" data-target="${percent}"></div>
-    </div>
+function progressBar(percent, isDone) {
+  const wrap = el(`<div>
+    <div class="progress-bar-wrap"><div class="progress-bar-fill${isDone ? " is-done" : ""}"></div></div>
     <div class="progress-bar-label">${percent}% complete</div>
-  `;
-  // Animate after paint
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      const fill = wrap.querySelector(".progress-bar-fill");
-      if (fill) fill.style.width = percent + "%";
-    });
-  });
+  </div>`);
+  const fill = wrap.querySelector(".progress-bar-fill");
+  requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = percent + "%"; }));
   return wrap;
 }
 
-/* ── Dynamic #7: Start a minute-tick to refresh relative times ── */
-let _relTimerActive = false;
-function startRelativeTimeRefresh() {
-  if (_relTimerActive) return;
-  _relTimerActive = true;
+/* One shared ticker keeps every relative timestamp fresh. */
+function startRelativeTimeTicker() {
   setInterval(() => {
-    document.querySelectorAll(".rel-time").forEach(el => {
-      const ts = Number(el.dataset.ts);
-      if (ts) el.textContent = timeAgo(ts);
+    document.querySelectorAll(".rel-time").forEach(node => {
+      const ts = Number(node.dataset.ts);
+      if (ts) node.textContent = timeAgo(ts);
     });
-  }, 30000); // every 30 seconds
+  }, 30000);
 }
 
 /* ---------------- Auth ---------------- */
@@ -379,12 +589,15 @@ function attemptLogin(username, password) {
   setSession(username);
   ui.view = "overview";
   ui.detailId = null;
+  ui.sidebarOpen = false;
   return true;
 }
 function logout() {
   clearSession();
   ui.view = "overview";
+  ui.detailId = null;
   ui.sidebarOpen = false;
+  ui.reportPhoto = ui.updatePhoto = ui.completionPhoto = null;
   render();
 }
 
@@ -392,18 +605,33 @@ function logout() {
 
 function render() {
   const app = document.getElementById("app");
+
+  /* Never leave a stale overlay behind: a leftover sidebar scrim used
+     to sit on top of the login screen after signing out. */
+  document.querySelectorAll(".sidebar-overlay").forEach(node => node.remove());
+  shellRefs = { sidebar: null, hamburger: null, overlay: null };
+
   const user = currentUser();
-  if (!user) { app.innerHTML = ""; app.appendChild(renderLogin()); return; }
+  if (!user) {
+    app.innerHTML = "";
+    app.appendChild(renderLogin());
+    return;
+  }
   app.innerHTML = "";
   try {
     app.appendChild(renderShell(user));
   } catch (error) {
     console.error("Smart Civic render error:", error);
     ui.detailId = null;
-    app.innerHTML = `<div class="render-recovery"><h2>We couldn't open that report.</h2><p>Your workspace is still available. Please return to your assignments and try again.</p><button class="btn btn--primary" type="button">Back to assignments</button></div>`;
-    app.querySelector("button").addEventListener("click", render);
+    app.innerHTML = "";
+    const recovery = el(`<div class="render-recovery">
+      <h2>We couldn't open that report.</h2>
+      <p>Your workspace is still available. Please return to your assignments and try again.</p>
+      <button class="btn btn--primary" type="button">Back to assignments</button>
+    </div>`);
+    recovery.querySelector("button").addEventListener("click", () => { ui.view = "overview"; render(); });
+    app.appendChild(recovery);
   }
-  startRelativeTimeRefresh();
 }
 
 /* ---------------- Login screen ---------------- */
@@ -414,9 +642,9 @@ const DEMO_ACCOUNTS = {
     { u: "citizen_maya", p: "citizen123", label: "Maya Iyer" },
   ],
   staff: [
-    { u: "staff_amara", p: "staff123", label: "Amara Okoye · Sanitation" },
-    { u: "staff_kofi", p: "staff123", label: "Kofi Boateng · Roads" },
-    { u: "staff_priya", p: "staff123", label: "Priya Nair · Water" },
+    { u: "staff_amara", p: "staff123", label: "Amara Okoye Â· Sanitation" },
+    { u: "staff_kofi", p: "staff123", label: "Kofi Boateng Â· Roads" },
+    { u: "staff_priya", p: "staff123", label: "Priya Nair Â· Water" },
   ],
   admin: [
     { u: "admin", p: "admin123", label: "S. Fernandes" },
@@ -424,53 +652,72 @@ const DEMO_ACCOUNTS = {
 };
 
 function renderLogin() {
-  const tpl = document.getElementById("tpl-login").content.cloneNode(true);
+  const fragment = document.getElementById("tpl-login").content.cloneNode(true);
   const wrap = el("<div></div>");
-  wrap.appendChild(tpl);
+  wrap.appendChild(fragment);
+  const shell = wrap.firstElementChild;
 
-  const tabs = wrap.querySelectorAll(".role-tab");
-  const demoBox = wrap.querySelector("#login-demo");
-  const form = wrap.querySelector("#login-form");
-  const errorEl = wrap.querySelector("#login-error");
+  const tabs = shell.querySelectorAll(".role-tab");
+  const demoBox = shell.querySelector("#login-demo");
+  const form = shell.querySelector("#login-form");
+  const errorEl = shell.querySelector("#login-error");
+  const usernameInput = shell.querySelector("#login-username");
+  const passwordInput = shell.querySelector("#login-password");
 
   function renderDemo() {
     const list = DEMO_ACCOUNTS[ui.loginRoleTab];
-    demoBox.innerHTML = `<h4>Demo accounts — ${ui.loginRoleTab === "citizen" ? "resident" : ui.loginRoleTab}</h4>
+    const heading = ui.loginRoleTab === "citizen" ? "resident" : ui.loginRoleTab;
+    demoBox.innerHTML = `<h4>Demo accounts â€” ${esc(heading)}</h4>
       <table>${list.map(a => `
         <tr>
-          <td class="role">${escapeHtml(a.label)}</td>
-          <td><button type="button" class="fill" data-u="${a.u}" data-p="${a.p}">${a.u} / ${a.p}</button></td>
+          <td class="role">${esc(a.label)}</td>
+          <td><button type="button" class="fill" data-u="${esc(a.u)}" data-p="${esc(a.p)}">${esc(a.u)} / ${esc(a.p)}</button></td>
         </tr>`).join("")}</table>`;
-    demoBox.querySelectorAll("button.fill").forEach(b => {
-      b.addEventListener("click", () => {
-        wrap.querySelector("#login-username").value = b.dataset.u;
-        wrap.querySelector("#login-password").value = b.dataset.p;
+    demoBox.querySelectorAll("button.fill").forEach(button => {
+      button.addEventListener("click", () => {
+        usernameInput.value = button.dataset.u;
+        passwordInput.value = button.dataset.p;
+        passwordInput.focus();
       });
     });
   }
 
   tabs.forEach(tab => {
     tab.addEventListener("click", () => {
-      tabs.forEach(t => t.classList.remove("is-active"));
-      tab.classList.add("is-active");
+      tabs.forEach(t => {
+        const on = t === tab;
+        t.classList.toggle("is-active", on);
+        t.setAttribute("aria-pressed", String(on));
+      });
       ui.loginRoleTab = tab.dataset.role;
       renderDemo();
     });
   });
 
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const u = wrap.querySelector("#login-username").value.trim();
-    const p = wrap.querySelector("#login-password").value;
-    if (attemptLogin(u, p)) { render(); }
-    else { errorEl.hidden = false; errorEl.textContent = "Username or password not recognized."; }
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const username = usernameInput.value.trim();
+    const password = passwordInput.value;
+    if (!username || !password) {
+      errorEl.hidden = false;
+      errorEl.textContent = "Enter both a username and a password.";
+      return;
+    }
+    if (attemptLogin(username, password)) {
+      errorEl.hidden = true;
+      render();
+    } else {
+      errorEl.hidden = false;
+      errorEl.textContent = "Username or password not recognized.";
+      passwordInput.select();
+    }
   });
 
   renderDemo();
   return wrap;
 }
 
-/* ---------------- Shared shell (topbar + sidebar) ---------------- */
+/* ---------------- Shared shell ---------------- */
 
 const NAV = {
   citizen: [
@@ -498,11 +745,7 @@ const ROLE_TITLE = { citizen: "Resident", staff: "Department staff", admin: "Adm
 
 function navCounts(user) {
   if (user.role === "citizen") {
-    return {
-      overview: db.problems.filter(p => p.citizen === user.username).length,
-      new: null,
-      profile: null,
-    };
+    return { overview: db.problems.filter(p => p.citizen === user.username).length, new: null, profile: null };
   }
   if (user.role === "staff") {
     return {
@@ -522,75 +765,72 @@ function navCounts(user) {
   };
 }
 
+function setSidebar(open) {
+  ui.sidebarOpen = open;
+  const { sidebar, hamburger, overlay } = shellRefs;
+  if (sidebar) sidebar.classList.toggle("is-open", open);
+  if (hamburger) {
+    hamburger.classList.toggle("is-open", open);
+    hamburger.setAttribute("aria-expanded", String(open));
+  }
+  if (overlay) overlay.classList.toggle("is-open", open);
+}
+
 function renderShell(user) {
   const wrap = el(`<div class="shell"></div>`);
   const counts = navCounts(user);
 
-  /* ── Dynamic #9: Hamburger + sidebar overlay ── */
-  document.querySelectorAll(".sidebar-overlay").forEach(o => o.remove());
-  const overlay = el(`<div class="sidebar-overlay" id="sidebar-overlay"></div>`);
+  const overlay = el(`<div class="sidebar-overlay"></div>`);
+  overlay.addEventListener("click", () => setSidebar(false));
   document.body.appendChild(overlay);
-
 
   const topbar = el(`
     <div class="topbar">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <button class="hamburger-btn" id="hamburger-btn" aria-label="Toggle navigation">
-          <span></span><span></span><span></span>
+      <div class="topbar__left">
+        <button class="hamburger-btn" id="hamburger-btn" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="app-sidebar">
+          <span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
         </button>
-        <div class="topbar__brand"><span class="glyph">SC</span> Smart Civic</div>
+        <div class="topbar__brand"><span class="glyph" aria-hidden="true">SC</span> Smart Civic</div>
       </div>
       <div class="topbar__right">
-        <div class="live-indicator" title="Report changes sync across open tabs"><span></span>Live</div>
+        <div class="live-indicator" title="Report changes sync across open tabs"><span aria-hidden="true"></span>Live</div>
         <div style="text-align:right">
-          <div class="topbar__user">${escapeHtml(user.name)}</div>
-          <div class="topbar__role">${ROLE_TITLE[user.role].toUpperCase()}${user.department ? " · " + escapeHtml(user.department) : ""}</div>
+          <div class="topbar__user">${esc(user.name)}</div>
+          <div class="topbar__role">${ROLE_TITLE[user.role].toUpperCase()}${user.department ? " Â· " + esc(user.department) : ""}</div>
         </div>
-        <button class="btn btn--ghost btn--sm" id="logout-btn">Sign out</button>
+        <button class="btn btn--ghost btn--sm" id="logout-btn" type="button">Sign out</button>
       </div>
     </div>
   `);
   topbar.querySelector("#logout-btn").addEventListener("click", logout);
-
   const hamburger = topbar.querySelector("#hamburger-btn");
-  function toggleSidebar() {
-    ui.sidebarOpen = !ui.sidebarOpen;
-    hamburger.classList.toggle("is-open", ui.sidebarOpen);
-    sidebar.classList.toggle("is-open", ui.sidebarOpen);
-    overlay.classList.toggle("is-open", ui.sidebarOpen);
-  }
-  hamburger.addEventListener("click", toggleSidebar);
-  overlay.addEventListener("click", () => {
-    ui.sidebarOpen = false;
-    hamburger.classList.remove("is-open");
-    sidebar.classList.remove("is-open");
-    overlay.classList.remove("is-open");
-  });
-
+  hamburger.addEventListener("click", () => setSidebar(!ui.sidebarOpen));
   wrap.appendChild(topbar);
 
-  const sidebar = el(`<div class="sidebar"></div>`);
-  if (ui.sidebarOpen) sidebar.classList.add("is-open");
-
+  const sidebar = el(`<aside class="sidebar" id="app-sidebar" aria-label="Main navigation"></aside>`);
   NAV[user.role].forEach(item => {
     const count = counts[item.id];
-    const btn = el(`
-      <button class="nav-item ${ui.view === item.id ? "is-active" : ""}" data-view="${item.id}">
-        <span>${item.label}</span>
+    const button = el(`
+      <button class="nav-item ${ui.view === item.id ? "is-active" : ""}" type="button" data-view="${item.id}"${ui.view === item.id ? ' aria-current="page"' : ""}>
+        <span>${esc(item.label)}</span>
         ${count !== null && count !== undefined ? `<span class="count">${count}</span>` : ""}
       </button>
     `);
-    btn.addEventListener("click", () => {
+    button.addEventListener("click", () => {
       ui.view = item.id;
       ui.detailId = null;
-      ui.sidebarOpen = false;
-      overlay.classList.remove("is-open");
+      setSidebar(false);
       render();
     });
-    sidebar.appendChild(btn);
+    sidebar.appendChild(button);
   });
-  sidebar.appendChild(el(`<div class="sidebar__foot">Smart Civic is a demo prototype. All data lives only in this browser's local storage.</div>`));
+  sidebar.appendChild(el(`<div class="sidebar__foot">Smart Civic is a demo prototype. Data lives only in this browser${localStore.persistent ? "" : " (preview mode: not saved)"}.</div>`));
   wrap.appendChild(sidebar);
+
+  shellRefs.sidebar = sidebar;
+  shellRefs.hamburger = hamburger;
+  shellRefs.overlay = overlay;
+  if (ui.sidebarOpen) setSidebar(true);
 
   const main = el(`<div class="main"></div>`);
   if (user.role === "citizen") renderCitizen(main, user);
@@ -610,153 +850,157 @@ function renderShell(user) {
       }
     }
   }
-
-  /* ── Dynamic #5: Escape key closes drawer or sidebar ── */
-  if (window._escHandler) document.removeEventListener("keydown", window._escHandler);
-  window._escHandler = (e) => {
-    if (e.key === "Escape") {
-      if (ui.detailId) {
-        closeDrawer(document.querySelector(".shell"));
-      } else if (ui.sidebarOpen) {
-        ui.sidebarOpen = false;
-        hamburger.classList.remove("is-open");
-        sidebar.classList.remove("is-open");
-        overlay.classList.remove("is-open");
-      }
-    }
-  };
-  document.addEventListener("keydown", window._escHandler);
-
   return wrap;
-
 }
 
-/* ── Dynamic #5: Smooth drawer slide-out ── */
-function closeDrawer(shellEl) {
-  const drawerEl = shellEl ? shellEl.querySelector(".drawer") : document.querySelector(".drawer");
-  if (!drawerEl) {
+/* Drawer close lives outside the drawer so a re-render of the shell
+   can still finish the animation cleanly. */
+function closeDrawer() {
+  ui.updatePhoto = null;
+  ui.completionPhoto = null;
+  const drawerEl = document.querySelector(".drawer");
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
     ui.detailId = null;
-    ui.updatePhoto = null;
-    ui.completionPhoto = null;
     render();
-    return;
-  }
+    if (lastFocus && document.contains(lastFocus) && typeof lastFocus.focus === "function") lastFocus.focus();
+  };
+  if (!drawerEl) { finish(); return; }
   drawerEl.classList.add("is-closing");
-  drawerEl.addEventListener("animationend", () => {
-    ui.detailId = null;
-    ui.updatePhoto = null;
-    ui.completionPhoto = null;
-    render();
-  }, { once: true });
+  drawerEl.addEventListener("animationend", finish, { once: true });
+  setTimeout(finish, 320); // safety net if the animation never fires
 }
 
-/* ---------------- Ledger row + tag helpers ---------------- */
+/* ---------------- Ledger rows ---------------- */
 
 function tagStatus(status) {
-  const cls = { submitted: "submitted", assigned: "assigned", "in-progress": "progress", completed: "completed" }[status];
-  return `<span class="tag tag--status-${cls}">${statusLabel(status)}</span>`;
+  const cls = { submitted: "submitted", assigned: "assigned", "in-progress": "progress", completed: "completed" }[status] || "submitted";
+  return `<span class="tag tag--status-${cls}">${esc(statusLabel(status))}</span>`;
 }
 function tagPriority(priority) {
   if (!priority) return `<span class="tag tag--priority-low">Not triaged</span>`;
-  return `<span class="tag tag--priority-${priority}">${priorityLabel(priority)} priority</span>`;
-}
-
-/* ── Dynamic #1: Progress bar on ledger row ── */
-function latestPercent(p) {
-  if (p.status === "completed") return 100;
-  if (!p.updates || !p.updates.length) return 0;
-  return p.updates[p.updates.length - 1].percent || 0;
+  return `<span class="tag tag--priority-${esc(priority)}">${esc(priorityLabel(priority))} priority</span>`;
 }
 
 function ledgerRow(p, opts = {}) {
   const pct = latestPercent(p);
   const isDone = p.status === "completed";
   const row = el(`
-    <div class="ledger-row" data-id="${p.id}">
-      <div class="ledger-row__id">${p.id}</div>
+    <button class="ledger-row" type="button" data-id="${esc(p.id)}"
+      aria-label="${esc(`${p.id}: ${p.title}. Status ${statusLabel(p.status)}${p.priority ? ", " + priorityLabel(p.priority) + " priority" : ""}.`)}">
+      <div class="ledger-row__id">${esc(p.id)}</div>
       <div class="ledger-row__body">
         <div class="ledger-row__title"></div>
         <div class="ledger-row__meta">
-          <span>${escapeHtml(p.category)}</span>
-          <span>·</span>
-          <span class="rel-time" data-ts="${opts.showCitizen ? "" : p.createdAt}" title="${fmtDate(p.createdAt)}">
-            ${opts.showCitizen ? "Reported by " + escapeHtml(p.citizenName) : timeAgo(p.createdAt)}
-          </span>
-          ${opts.showAssignee ? `<span>·</span><span>${p.assignedToName ? "Assigned to " + escapeHtml(p.assignedToName) : "Unassigned"}</span>` : ""}
+          <span>${esc(p.category)}</span>
+          <span aria-hidden="true">Â·</span>
+          ${opts.showCitizen
+            ? `<span class="rel-time">Reported by ${esc(p.citizenName)}</span>`
+            : `<span class="rel-time" data-ts="${p.createdAt}" title="${esc(fmtDate(p.createdAt))}">${esc(timeAgo(p.createdAt))}</span>`}
+          ${opts.showAssignee ? `<span aria-hidden="true">Â·</span><span>${p.assignedToName ? "Assigned to " + esc(p.assignedToName) : "Unassigned"}</span>` : ""}
         </div>
-        ${(pct > 0 || isDone) ? `<div class="progress-bar-wrap" style="margin-top:6px;"><div class="progress-bar-fill${isDone ? " is-done" : ""}" data-target="${pct}"></div></div>` : ""}
+        ${(pct > 0 || isDone) ? `<div class="progress-bar-wrap"><div class="progress-bar-fill${isDone ? " is-done" : ""}"></div></div>` : ""}
       </div>
       <div class="ledger-row__side">
         ${tagStatus(p.status)}
+        ${dueTag(p)}
         ${tagPriority(p.priority)}
       </div>
-    </div>
+    </button>
   `);
 
-  // Animate progress bar
+  /* The report title was previously never written into the row. */
+  row.querySelector(".ledger-row__title").textContent = p.title;
+
   if (pct > 0 || isDone) {
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      const fill = row.querySelector(".progress-bar-fill");
-      if (fill) fill.style.width = pct + "%";
-    }));
+    const fill = row.querySelector(".progress-bar-fill");
+    requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = pct + "%"; }));
   }
 
-  row.addEventListener("click", () => { ui.detailId = p.id; render(); });
+  row.addEventListener("click", () => {
+    lastFocus = row;
+    ui.detailId = p.id;
+    render();
+  });
   return row;
 }
 
-function renderLedger(list, opts) {
+function renderLedger(list, opts = {}) {
   if (!list.length) {
-    return el(`<div class="ledger"><div class="ledger-empty">Nothing here yet.</div></div>`);
+    return el(`<div class="ledger"><div class="ledger-empty">${esc(opts.emptyText || "Nothing here yet.")}</div></div>`);
   }
   const wrap = el(`<div class="ledger"></div>`);
   list.forEach(p => wrap.appendChild(ledgerRow(p, opts)));
   return wrap;
 }
 
-/* ---------------- Personal profiles ---------------- */
+/* ---------------- Profile ---------------- */
+
 function renderProfile(main, user) {
   const initials = user.name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase();
   const roleSummary = user.role === "citizen"
-    ? `${db.problems.filter(problem => problem.citizen === user.username).length} reports submitted`
+    ? `${db.problems.filter(p => p.citizen === user.username).length} reports submitted`
     : user.role === "staff"
-      ? `${db.problems.filter(problem => problem.assignedTo === user.username && problem.status === "completed").length} jobs completed`
+      ? `${db.problems.filter(p => p.assignedTo === user.username && p.status === "completed").length} jobs completed`
       : `${db.problems.length} city reports managed`;
+
   const roleDetail = user.role === "staff"
-    ? `<div class="profile-readonly"><span>Department</span><strong>${escapeHtml(user.department)}</strong></div><div class="profile-readonly"><span>Work specialties</span><strong>${(user.workTypes || []).length ? user.workTypes.map(escapeHtml).join(", ") : "Not recorded"}</strong></div>`
+    ? `<div class="profile-readonly"><span>Department</span><strong>${esc(user.department)}</strong></div>
+       <div class="profile-readonly"><span>Work specialties</span><strong>${(user.workTypes || []).length ? user.workTypes.map(esc).join(", ") : "Not recorded"}</strong></div>`
     : user.role === "admin"
-      ? `<div class="profile-readonly"><span>Access level</span><strong>${escapeHtml(user.title || "Municipal Administrator")}</strong></div><div class="profile-readonly"><span>Scope</span><strong>All departments</strong></div>`
-      : `<div class="profile-readonly"><span>Account type</span><strong>Resident account</strong></div><div class="profile-readonly"><span>Report visibility</span><strong>Only your submitted reports</strong></div>`;
+      ? `<div class="profile-readonly"><span>Access level</span><strong>${esc(user.title || "Municipal Administrator")}</strong></div>
+         <div class="profile-readonly"><span>Scope</span><strong>All departments</strong></div>`
+      : `<div class="profile-readonly"><span>Account type</span><strong>Resident account</strong></div>
+         <div class="profile-readonly"><span>Report visibility</span><strong>Only your submitted reports</strong></div>`;
 
   main.appendChild(el(`<div class="page-head"><div><h2>My profile</h2><p class="sub">Your personal account and role information.</p></div></div>`));
+
   const layout = el(`<div class="profile-layout"></div>`);
-  layout.appendChild(el(`<aside class="profile-identity"><div class="profile-avatar">${escapeHtml(initials || "SC")}</div><h3>${escapeHtml(user.name)}</h3><p>${ROLE_TITLE[user.role]}</p><div class="profile-summary">${roleSummary}</div><div class="profile-username">@${escapeHtml(user.username)}</div></aside>`));
+  layout.appendChild(el(`<aside class="profile-identity">
+    <div class="profile-avatar" aria-hidden="true">${esc(initials || "SC")}</div>
+    <h3>${esc(user.name)}</h3>
+    <p>${ROLE_TITLE[user.role]}</p>
+    <div class="profile-summary">${roleSummary}</div>
+    <div class="profile-username">@${esc(user.username)}</div>
+  </aside>`));
 
   const panel = el(`<section class="panel profile-details"><h3>Account details</h3></section>`);
   panel.insertAdjacentHTML("beforeend", `
     <div class="grid-2">
-      <div class="field"><span class="label">Display name</span><input type="text" id="profile-name" value="${escapeHtml(user.name)}" /></div>
-      <div class="field"><span class="label">Username</span><input type="text" value="${escapeHtml(user.username)}" disabled /></div>
+      <div class="field"><label class="label" for="profile-name">Display name</label><input type="text" id="profile-name" value="${esc(user.name)}" /></div>
+      <div class="field"><label class="label" for="profile-username">Username</label><input type="text" id="profile-username" value="${esc(user.username)}" disabled /></div>
     </div>
     <div class="grid-2">
-      <div class="field"><span class="label">Email <small>(optional)</small></span><input type="text" id="profile-email" value="${escapeHtml(user.email || "")}" placeholder="name@example.com" /></div>
-      <div class="field"><span class="label">Phone <small>(optional)</small></span><input type="text" id="profile-phone" value="${escapeHtml(user.phone || "")}" placeholder="+91 ..." /></div>
+      <div class="field"><label class="label" for="profile-email">Email <small>(optional)</small></label><input type="text" id="profile-email" value="${esc(user.email || "")}" placeholder="name@example.com" /></div>
+      <div class="field"><label class="label" for="profile-phone">Phone <small>(optional)</small></label><input type="text" id="profile-phone" value="${esc(user.phone || "")}" placeholder="+91 ..." /></div>
     </div>
     <div class="profile-role-details">${roleDetail}</div>
     <hr class="divider" />
-    <div class="field"><span class="label">New password <small>(leave empty to keep current password)</small></span><input type="password" id="profile-password" placeholder="New password" autocomplete="new-password" /></div>
+    <div class="field">
+      <label class="label" for="profile-password">New password <small>(leave empty to keep the current one)</small></label>
+      <input type="password" id="profile-password" placeholder="At least 6 characters" autocomplete="new-password" />
+    </div>
     <button class="btn btn--primary" type="button" id="save-profile-btn">Save profile</button>
   `);
-  panel.querySelector("#save-profile-btn").addEventListener("click", () => {
-    const name = panel.querySelector("#profile-name").value.trim();
-    const email = panel.querySelector("#profile-email").value.trim();
-    const phone = panel.querySelector("#profile-phone").value.trim();
-    const password = panel.querySelector("#profile-password").value;
-    if (!name) { toast("Enter a display name."); return; }
-    if (email && !/^\S+@\S+\.\S+$/.test(email)) { toast("Enter a valid email address."); return; }
-    user.name = name; user.email = email; user.phone = phone;
-    if (password) user.password = password;
-    saveDB(); toast("Your profile was updated."); render();
+  panel.querySelector("#save-profile-btn").addEventListener("click", (event) => {
+    withBusy(event.currentTarget, "Savingâ€¦", () => {
+      const name = panel.querySelector("#profile-name").value.trim();
+      const email = panel.querySelector("#profile-email").value.trim();
+      const phone = panel.querySelector("#profile-phone").value.trim();
+      const password = panel.querySelector("#profile-password").value;
+      if (!name) { toast("Enter a display name."); return; }
+      if (email && !/^\S+@\S+\.\S+$/.test(email)) { toast("Enter a valid email address."); return; }
+      if (password && password.length < 6) { toast("Use at least 6 characters for the new password."); return; }
+      user.name = name;
+      user.email = email;
+      user.phone = phone;
+      if (password) user.password = password;
+      saveDB();
+      toast("Your profile was updated.");
+      render();
+    });
   });
   layout.appendChild(panel);
   main.appendChild(layout);
@@ -774,30 +1018,54 @@ function renderCitizen(main, user) {
 
 function renderCitizenOverview(main, user) {
   const mine = db.problems.filter(p => p.citizen === user.username).sort((a, b) => b.createdAt - a.createdAt);
+
   main.appendChild(el(`
     <div class="page-head">
       <div><h2>My reports</h2><p class="sub">Every problem you've submitted, and where it stands.</p></div>
-      <button class="btn btn--ochre" id="new-report-btn">Report a problem</button>
+      <button class="btn btn--ochre" id="new-report-btn" type="button">Report a problem</button>
     </div>
   `));
   main.querySelector("#new-report-btn").addEventListener("click", () => { ui.view = "new"; render(); });
 
-  const awaitingRating = mine.filter(p => p.status === "completed" && p.rating === null);
-  if (awaitingRating.length) {
-    main.appendChild(el(`<div class="panel" style="border-color:var(--amber); background: var(--amber-soft); margin-bottom:20px;">
-      <strong>${awaitingRating.length} completed report${awaitingRating.length > 1 ? "s" : ""} waiting on your feedback.</strong>
-      <div style="margin-top:4px; font-size:13px; color:var(--ink-soft);">Open a completed report below to rate the service and leave feedback.</div>
+  const open = mine.filter(p => p.status !== "completed").length;
+  const done = mine.filter(p => p.status === "completed").length;
+  const awaiting = mine.filter(p => p.status === "completed" && p.rating === null).length;
+  const overdue = mine.filter(p => { const d = dueMeta(p); return d && d.level === "over"; }).length;
+
+  const strip = el(`<div class="stat-strip">
+    <div class="stat"><div class="n anim-counter"></div><div class="l">Reports submitted</div></div>
+    <div class="stat accent"><div class="n anim-counter"></div><div class="l">Still open</div></div>
+    <div class="stat${overdue ? " warn" : ""}"><div class="n anim-counter"></div><div class="l">Past target date</div></div>
+    <div class="stat"><div class="n anim-counter"></div><div class="l">Completed</div></div>
+    <div class="stat"><div class="n">${awaiting}</div><div class="l">Waiting on your rating</div></div>
+  </div>`);
+  main.appendChild(strip);
+  const numbers = strip.querySelectorAll(".anim-counter");
+  requestAnimationFrame(() => {
+    animateCount(numbers[0], mine.length, 700);
+    animateCount(numbers[1], open, 650);
+    animateCount(numbers[2], overdue, 600);
+    animateCount(numbers[3], done, 700);
+  });
+
+  if (awaiting) {
+    main.appendChild(el(`<div class="mark-notice">
+      <strong>${awaiting} completed report${awaiting > 1 ? "s" : ""} waiting on your feedback.</strong>
+      <p>Open a completed report below to rate the service and leave feedback â€” your rating awards coins to the crew.</p>
     </div>`));
   }
 
-  main.appendChild(renderFilteredLedger(mine, { label: "My reports" }));
+  main.appendChild(renderFilteredLedger(mine, {
+    label: "My reports",
+    emptyText: "You haven't reported anything yet. Use â€œReport a problemâ€ to get started.",
+  }));
 }
 
 function renderCitizenNew(main, user) {
   main.appendChild(el(`
     <div class="page-head">
-      <div><h2>Report a problem</h2><p class="sub">Describe the issue clearly — this goes straight to the administrator's triage inbox.</p></div>
-      <button class="btn btn--ghost" id="back-btn">← Back to my reports</button>
+      <div><h2>Report a problem</h2><p class="sub">Describe the issue clearly â€” this goes straight to the administrator's triage inbox.</p></div>
+      <button class="btn btn--ghost" id="back-btn" type="button">â† Back to my reports</button>
     </div>
   `));
   main.querySelector("#back-btn").addEventListener("click", () => { ui.view = "overview"; ui.reportPhoto = null; render(); });
@@ -805,68 +1073,91 @@ function renderCitizenNew(main, user) {
   const panel = el(`<div class="panel"></div>`);
   panel.innerHTML = `
     <div class="field">
-      <span class="label">Title</span>
-      <input type="text" id="f-title" placeholder="Short summary of the problem" maxlength="120" />
-      <div class="char-counter" id="title-counter">0 / 120</div>
-    </div>
-    <div class="field"><span class="label">Category</span>
-      <select id="f-category">${CATEGORIES.map(c => `<option>${c}</option>`).join("")}</select>
+      <label class="label" for="f-title">Title</label>
+      <input type="text" id="f-title" placeholder="Short summary of the problem" maxlength="${MAX_TITLE}" />
+      <div class="char-counter" id="title-counter">0 / ${MAX_TITLE}</div>
     </div>
     <div class="field">
-      <span class="label">Description</span>
-      <textarea id="f-desc" placeholder="What's wrong, where exactly, and since when?" maxlength="800"></textarea>
-      <div class="char-counter" id="desc-counter">0 / 800</div>
+      <label class="label" for="f-category">Category</label>
+      <select id="f-category">${CATEGORIES.map(c => `<option>${esc(c)}</option>`).join("")}</select>
+      <span class="hint" id="sla-hint"></span>
+    </div>
+    <div class="field">
+      <label class="label" for="f-desc">Description</label>
+      <textarea id="f-desc" placeholder="What's wrong, where exactly, and since when?" maxlength="${MAX_DESC}"></textarea>
+      <div class="char-counter" id="desc-counter">0 / ${MAX_DESC}</div>
     </div>
     <div class="field">
       <span class="label">Photo (optional)</span>
-      <div class="photo-drop" id="f-photo-drop">Click to attach a photo of the problem</div>
+      <div class="photo-drop" id="f-photo-drop">Click or drop a photo of the problem here</div>
       <div class="photo-preview" id="f-photo-preview"></div>
     </div>
-    <button class="btn btn--primary" id="f-submit">Submit report</button>
+    <button class="btn btn--primary" id="f-submit" type="button">Submit report</button>
   `;
   main.appendChild(panel);
 
-  /* ── Dynamic #4: Character counters ── */
   const titleInput = panel.querySelector("#f-title");
   const titleCounter = panel.querySelector("#title-counter");
   const descInput = panel.querySelector("#f-desc");
   const descCounter = panel.querySelector("#desc-counter");
+  const categorySelect = panel.querySelector("#f-category");
+  const slaHint = panel.querySelector("#sla-hint");
 
   function updateCounter(input, counter, max) {
     const len = input.value.length;
     counter.textContent = `${len} / ${max}`;
-    counter.className = "char-counter" + (len > max * 0.9 ? (len >= max ? " is-over" : " is-warn") : "");
+    counter.className = "char-counter" + (len >= max ? " is-over" : len > max * 0.9 ? " is-warn" : "");
   }
-  titleInput.addEventListener("input", () => updateCounter(titleInput, titleCounter, 120));
-  descInput.addEventListener("input", () => updateCounter(descInput, descCounter, 800));
+  function updateSlaHint() {
+    const days = SLA_DAYS[categorySelect.value] ?? 5;
+    slaHint.textContent = `Target response time for this category: ${days} day${days === 1 ? "" : "s"}.`;
+  }
+  titleInput.addEventListener("input", () => updateCounter(titleInput, titleCounter, MAX_TITLE));
+  descInput.addEventListener("input", () => updateCounter(descInput, descCounter, MAX_DESC));
+  categorySelect.addEventListener("change", updateSlaHint);
+  updateSlaHint();
 
   const preview = panel.querySelector("#f-photo-preview");
-  function refreshPreview() {
-    preview.innerHTML = ui.reportPhoto ? `<img src="${ui.reportPhoto}" alt="Attached photo" />` : "";
-  }
+  const refreshPreview = () => { preview.innerHTML = ui.reportPhoto ? `<img src="${ui.reportPhoto}" alt="Attached photo of the problem" />` : ""; };
   wireDropZone(panel.querySelector("#f-photo-drop"), (dataUrl) => { ui.reportPhoto = dataUrl; refreshPreview(); });
   refreshPreview();
 
-  panel.querySelector("#f-submit").addEventListener("click", () => {
-    const title = panel.querySelector("#f-title").value.trim();
-    const desc = panel.querySelector("#f-desc").value.trim();
-    const category = panel.querySelector("#f-category").value;
-    if (!title || !desc) { toast("Add a title and description before submitting."); return; }
-    const problem = {
-      id: nextId(), title, description: desc, category, photo: ui.reportPhoto || null,
-      citizen: user.username, citizenName: user.name,
-      status: "submitted", priority: null,
-      assignedTo: null, assignedToName: null, department: null,
-      createdAt: Date.now(), assignedAt: null, completedAt: null,
-      updates: [], completionPhoto: null,
-      rating: null, feedback: null, coinsAwarded: null, ratedAt: null,
-    };
-    db.problems.unshift(problem);
-    saveDB();
-    ui.reportPhoto = null;
-    ui.view = "overview";
-    toast("Report submitted — the administrator will review it shortly.");
-    render();
+  panel.querySelector("#f-submit").addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    const title = titleInput.value.trim();
+    const description = descInput.value.trim();
+    if (!title || !description) { toast("Add a title and description before submitting."); return; }
+    withBusy(button, "Submittingâ€¦", () => {
+      const problem = {
+        id: nextId(),
+        title,
+        description,
+        category: categorySelect.value,
+        photo: ui.reportPhoto || null,
+        citizen: user.username,
+        citizenName: user.name,
+        status: "submitted",
+        priority: null,
+        assignedTo: null,
+        assignedToName: null,
+        department: null,
+        createdAt: Date.now(),
+        assignedAt: null,
+        completedAt: null,
+        updates: [],
+        completionPhoto: null,
+        rating: null,
+        feedback: null,
+        coinsAwarded: null,
+        ratedAt: null,
+      };
+      db.problems.unshift(problem);
+      saveDB();
+      ui.reportPhoto = null;
+      ui.view = "overview";
+      toast("Report submitted â€” the administrator will review it shortly.");
+      render();
+    });
   });
 }
 
@@ -882,14 +1173,17 @@ function renderStaff(main, user) {
 }
 
 function renderStaffOverview(main, user) {
-  const mine = db.problems.filter(p => p.assignedTo === user.username && p.status !== "completed")
-    .sort((a, b) => (a.priority === "critical" ? -1 : 1) - (b.priority === "critical" ? -1 : 1) || a.createdAt - b.createdAt);
+  const mine = sortByUrgency(db.problems.filter(p => p.assignedTo === user.username && p.status !== "completed"));
   main.appendChild(el(`
     <div class="page-head">
-      <div><h2>My assignments</h2><p class="sub">Problems assigned to you in ${escapeHtml(user.department)} that still need work.</p></div>
+      <div><h2>My assignments</h2><p class="sub">Problems assigned to you in ${esc(user.department)} that still need work. Overdue jobs are listed first.</p></div>
     </div>
   `));
-  main.appendChild(renderFilteredLedger(mine, { showCitizen: true, label: "My assignments" }));
+  main.appendChild(renderFilteredLedger(mine, {
+    showCitizen: true,
+    label: "My assignments",
+    emptyText: "No open assignments right now â€” everything you've been given is finished.",
+  }));
 }
 
 function renderStaffHistory(main, user) {
@@ -897,7 +1191,11 @@ function renderStaffHistory(main, user) {
   main.appendChild(el(`
     <div class="page-head"><div><h2>Completed by me</h2><p class="sub">Your finished work and the ratings residents gave it.</p></div></div>
   `));
-  main.appendChild(renderFilteredLedger(done, { showCitizen: true, label: "Completed work" }));
+  main.appendChild(renderFilteredLedger(done, {
+    showCitizen: true,
+    label: "Completed work",
+    emptyText: "You haven't completed any jobs yet.",
+  }));
 }
 
 function renderStaffWallet(main, user) {
@@ -905,46 +1203,52 @@ function renderStaffWallet(main, user) {
     <div class="page-head"><div><h2>My coin wallet</h2><p class="sub">Coins are awarded when a resident rates your completed work. The administrator converts coins to payout.</p></div></div>
   `));
 
-  /* ── Dynamic #3: Animated coin counter ── */
-  const completed = db.problems.filter(p => p.assignedTo === user.username && p.status === "completed").length;
-  const avgVal = avgRating(user.username);
+  const completed = db.problems.filter(p => p.assignedTo === user.username && p.status === "completed");
+  const unrated = completed.filter(p => p.rating === null);
+  const potential = unrated.length * 5 * COIN_RATE; // best case: a 5-star rating each
   const strip = el(`
     <div class="stat-strip">
       <div class="stat accent"><div class="n anim-counter" id="coin-count">0</div><div class="l">Coin balance</div></div>
       <div class="stat"><div class="n anim-counter" id="jobs-count">0</div><div class="l">Jobs completed</div></div>
-      <div class="stat"><div class="n">${avgVal ?? "—"}</div><div class="l">Average rating</div></div>
+      <div class="stat"><div class="n">${avgRating(user.username) ?? "â€”"}</div><div class="l">Average rating</div></div>
+      <div class="stat"><div class="n anim-counter" id="pending-count">0</div><div class="l">Coins awaiting rating</div></div>
     </div>
   `);
   main.appendChild(strip);
   requestAnimationFrame(() => {
     animateCount(strip.querySelector("#coin-count"), user.coins, 900);
-    animateCount(strip.querySelector("#jobs-count"), completed, 700);
+    animateCount(strip.querySelector("#jobs-count"), completed.length, 700);
+    animateCount(strip.querySelector("#pending-count"), potential, 800);
   });
+  if (unrated.length) {
+    main.appendChild(el(`<div class="mark-notice">
+      <strong>${unrated.length} completed job${unrated.length > 1 ? "s" : ""} not rated yet.</strong>
+      <p>Coins are released as soon as the resident rates the work â€” up to ${potential} coins in total.</p>
+    </div>`));
+  }
 
   const earned = db.problems.filter(p => p.assignedTo === user.username && p.coinsAwarded).sort((a, b) => b.ratedAt - a.ratedAt);
   const spent = db.conversions.filter(c => c.staff === user.username).sort((a, b) => b.timestamp - a.timestamp);
 
   const panel = el(`<div class="panel"><h3>Coin history</h3></div>`);
   const rows = [
-    ...earned.map(p => ({ ts: p.ratedAt, text: `Earned for "${p.title}" (${p.rating}★ rating)`, delta: `+${p.coinsAwarded}` })),
-    ...spent.map(c => ({ ts: c.timestamp, text: `Converted to payout by administrator`, delta: `-${c.coins}` })),
+    ...earned.map(p => ({ ts: p.ratedAt, text: `Earned for â€œ${p.title}â€ (${p.rating}â˜… rating)`, delta: `+${p.coinsAwarded}` })),
+    ...spent.map(c => ({ ts: c.timestamp, text: "Converted to payout by administrator", delta: `-${c.coins}` })),
   ].sort((a, b) => b.ts - a.ts);
 
   if (!rows.length) {
-    panel.appendChild(el(`<p style="color:var(--ink-faint); font-size:13.5px;">No coin activity yet.</p>`));
+    panel.appendChild(el(`<p class="sub" style="color:var(--ink-faint);font-size:13.5px;">No coin activity yet.</p>`));
   } else {
     const table = el(`<table class="table-mini"><thead><tr><th>Date</th><th>Activity</th><th style="text-align:right;">Coins</th></tr></thead><tbody></tbody></table>`);
     const body = table.querySelector("tbody");
-    rows.forEach(r => body.appendChild(el(`<tr><td class="rel-time" data-ts="${r.ts}" title="${fmtDateShort(r.ts)}">${timeAgo(r.ts)}</td><td>${escapeHtml(r.text)}</td><td style="text-align:right;" class="coin">${r.delta}</td></tr>`)));
+    rows.forEach(r => body.appendChild(el(`<tr>
+      <td class="rel-time" data-ts="${r.ts}" title="${esc(fmtDateShort(r.ts))}">${esc(timeAgo(r.ts))}</td>
+      <td>${esc(r.text)}</td>
+      <td class="coin" style="justify-content:flex-end;">${esc(r.delta)}</td>
+    </tr>`)));
     panel.appendChild(table);
   }
   main.appendChild(panel);
-}
-
-function avgRating(staffUsername) {
-  const rated = db.problems.filter(p => p.assignedTo === staffUsername && p.rating);
-  if (!rated.length) return null;
-  return (rated.reduce((s, p) => s + p.rating, 0) / rated.length).toFixed(1);
 }
 
 /* ============================================================
@@ -965,50 +1269,59 @@ function renderAdminOverview(main, user) {
   const submitted = db.problems.filter(p => p.status === "submitted").length;
   const active = db.problems.filter(p => p.status === "assigned" || p.status === "in-progress").length;
   const completed = db.problems.filter(p => p.status === "completed").length;
+  const overdue = db.problems.filter(p => { const d = dueMeta(p); return d && d.level === "over"; }).length;
   const rated = db.problems.filter(p => p.rating);
-  const avg = rated.length ? (rated.reduce((s, p) => s + p.rating, 0) / rated.length).toFixed(1) : "—";
+  const avg = rated.length ? (rated.reduce((sum, p) => sum + p.rating, 0) / rated.length).toFixed(1) : "â€”";
 
-  main.appendChild(el(`
-    <div class="page-head"><div><h2>Overview</h2><p class="sub">City-wide status across all departments.</p></div></div>
-  `));
+  main.appendChild(el(`<div class="page-head"><div><h2>Overview</h2><p class="sub">City-wide status across all departments.</p></div></div>`));
 
-  /* ── Dynamic #6: Animated stat counters ── */
-  const strip = el(`
-    <div class="stat-strip">
-      <div class="stat"><div class="n anim-counter" id="s-total">0</div><div class="l">Total reports</div></div>
-      <div class="stat accent"><div class="n anim-counter" id="s-submitted">0</div><div class="l">Awaiting triage</div></div>
-      <div class="stat"><div class="n anim-counter" id="s-active">0</div><div class="l">In progress</div></div>
-      <div class="stat"><div class="n anim-counter" id="s-done">0</div><div class="l">Completed</div></div>
-      <div class="stat"><div class="n">${avg}</div><div class="l">Average rating</div></div>
-    </div>
-  `);
+  const strip = el(`<div class="stat-strip">
+    <div class="stat"><div class="n anim-counter" id="s-total">0</div><div class="l">Total reports</div></div>
+    <div class="stat accent"><div class="n anim-counter" id="s-submitted">0</div><div class="l">Awaiting triage</div></div>
+    <div class="stat"><div class="n anim-counter" id="s-active">0</div><div class="l">In progress</div></div>
+    <div class="stat${overdue ? " warn" : ""}"><div class="n anim-counter" id="s-overdue">0</div><div class="l">Past target date</div></div>
+    <div class="stat"><div class="n anim-counter" id="s-done">0</div><div class="l">Completed</div></div>
+    <div class="stat"><div class="n">${avg}</div><div class="l">Average rating</div></div>
+  </div>`);
   main.appendChild(strip);
   requestAnimationFrame(() => {
     animateCount(strip.querySelector("#s-total"), total, 800);
     animateCount(strip.querySelector("#s-submitted"), submitted, 600);
     animateCount(strip.querySelector("#s-active"), active, 700);
+    animateCount(strip.querySelector("#s-overdue"), overdue, 650);
     animateCount(strip.querySelector("#s-done"), completed, 750);
   });
 
   main.appendChild(el(`<h3 style="margin-bottom:12px;">Recent activity</h3>`));
-  const recent = [...db.problems].sort((a, b) => (b.ratedAt || b.completedAt || b.assignedAt || b.createdAt) - (a.ratedAt || a.completedAt || a.assignedAt || a.createdAt)).slice(0, 8);
+  const recent = [...db.problems]
+    .sort((a, b) => (b.ratedAt || b.completedAt || b.assignedAt || b.createdAt) - (a.ratedAt || a.completedAt || a.assignedAt || a.createdAt))
+    .slice(0, 8);
   main.appendChild(renderFilteredLedger(recent, { showCitizen: true, showAssignee: true, label: "Recent activity" }));
 }
 
 function renderAdminTriage(main, user) {
-  const inbox = db.problems.filter(p => p.status === "submitted").sort((a, b) => a.createdAt - b.createdAt);
+  const inbox = sortByUrgency(db.problems.filter(p => p.status === "submitted"));
   main.appendChild(el(`
-    <div class="page-head"><div><h2>Triage inbox</h2><p class="sub">New reports — set a priority and assign to a department staff member.</p></div></div>
+    <div class="page-head"><div><h2>Triage inbox</h2><p class="sub">New reports â€” set a priority and assign to a department staff member. Oldest and overdue first.</p></div></div>
   `));
-  main.appendChild(renderFilteredLedger(inbox, { showCitizen: true, label: "Triage inbox" }));
+  main.appendChild(renderFilteredLedger(inbox, {
+    showCitizen: true,
+    label: "Triage inbox",
+    emptyText: "Nothing waiting â€” every submitted report has been triaged.",
+  }));
 }
 
 function renderAdminAssigned(main, user) {
-  const active = db.problems.filter(p => p.status === "assigned" || p.status === "in-progress").sort((a, b) => a.assignedAt - b.assignedAt);
+  const active = sortByUrgency(db.problems.filter(p => p.status === "assigned" || p.status === "in-progress"));
   main.appendChild(el(`
     <div class="page-head"><div><h2>Assigned work</h2><p class="sub">Everything currently with a department, and its progress.</p></div></div>
   `));
-  main.appendChild(renderFilteredLedger(active, { showCitizen: true, showAssignee: true, label: "Assigned work" }));
+  main.appendChild(renderFilteredLedger(active, {
+    showCitizen: true,
+    showAssignee: true,
+    label: "Assigned work",
+    emptyText: "No work is currently assigned.",
+  }));
 }
 
 function renderAdminStaff(main, user) {
@@ -1020,78 +1333,112 @@ function renderAdminStaff(main, user) {
   const form = el(`<div class="panel staff-form"><h3>Add department staff</h3></div>`);
   form.insertAdjacentHTML("beforeend", `
     <div class="grid-2">
-      <div class="field"><span class="label">Full name</span><input type="text" id="staff-name" placeholder="e.g. Arun Kumar" /></div>
-      <div class="field"><span class="label">Department</span><select id="staff-department">${CATEGORIES.map(c => `<option>${escapeHtml(c)}</option>`).join("")}</select></div>
+      <div class="field"><label class="label" for="staff-name">Full name</label><input type="text" id="staff-name" placeholder="e.g. Arun Kumar" /></div>
+      <div class="field"><label class="label" for="staff-department">Department</label><select id="staff-department">${CATEGORIES.map(c => `<option>${esc(c)}</option>`).join("")}</select></div>
     </div>
-    <div class="field"><span class="label">Work specialties</span><input type="text" id="staff-work-types" placeholder="e.g. Pothole repair, Drain cleaning" /><span class="hint">Separate multiple work types with commas.</span></div>
+    <div class="field">
+      <label class="label" for="staff-work-types">Work specialties</label>
+      <input type="text" id="staff-work-types" placeholder="e.g. Pothole repair, Drain cleaning" />
+      <span class="hint">Separate multiple work types with commas.</span>
+    </div>
     <div class="grid-2">
-      <div class="field"><span class="label">Username</span><input type="text" id="staff-username" placeholder="e.g. staff_arun" /></div>
-      <div class="field"><span class="label">Temporary password</span><input type="text" id="staff-password" placeholder="Set a sign-in password" /></div>
+      <div class="field"><label class="label" for="staff-username">Username</label><input type="text" id="staff-username" placeholder="e.g. staff_arun" /></div>
+      <div class="field"><label class="label" for="staff-password">Temporary password</label><input type="text" id="staff-password" placeholder="At least 6 characters" /></div>
     </div>
     <button class="btn btn--primary" type="button" id="add-staff-btn">Add staff member</button>
   `);
-  form.querySelector("#add-staff-btn").addEventListener("click", () => {
-    const name = form.querySelector("#staff-name").value.trim();
-    const department = form.querySelector("#staff-department").value;
-    const requestedUsername = form.querySelector("#staff-username").value.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
-    const password = form.querySelector("#staff-password").value;
-    const workTypes = form.querySelector("#staff-work-types").value.split(",").map(type => type.trim()).filter(Boolean);
-    if (!name || !requestedUsername || !password) { toast("Add the name, username, and temporary password."); return; }
-    if (db.users.some(member => member.username === requestedUsername)) { toast("That username is already in use."); return; }
-    db.users.push({ username: requestedUsername, password, role: "staff", name, department, workTypes, coins: 0, createdAt: Date.now() });
-    saveDB();
-    toast(`${name} was added to the ${department} team.`);
-    render();
+  form.querySelector("#add-staff-btn").addEventListener("click", (event) => {
+    withBusy(event.currentTarget, "Addingâ€¦", () => {
+      const name = form.querySelector("#staff-name").value.trim();
+      const department = form.querySelector("#staff-department").value;
+      const requestedUsername = form.querySelector("#staff-username").value.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
+      const password = form.querySelector("#staff-password").value;
+      const workTypes = form.querySelector("#staff-work-types").value.split(",").map(type => type.trim()).filter(Boolean);
+      if (!name || !requestedUsername || !password) { toast("Add the name, username, and temporary password."); return; }
+      if (password.length < 6) { toast("Use at least 6 characters for the temporary password."); return; }
+      if (db.users.some(member => member.username === requestedUsername)) { toast("That username is already in use."); return; }
+      db.users.push({ username: requestedUsername, password, role: "staff", name, department, workTypes, coins: 0, createdAt: Date.now() });
+      saveDB();
+      toast(`${name} was added to the ${department} team.`);
+      render();
+    });
   });
   main.appendChild(form);
 
-  const directory = el(`<section class="staff-directory"><div class="helper-row"><h3>Department staff <span class="directory-count">${staff.length}</span></h3><span class="sub">Live team roster</span></div><div class="staff-directory__grid"></div></section>`);
+  const directory = el(`<section class="staff-directory">
+    <div class="helper-row"><h3>Department staff <span class="directory-count">${staff.length}</span></h3><span class="sub" style="color:var(--ink-faint);font-size:12.5px;">Live team roster</span></div>
+    <div class="staff-directory__grid"></div>
+  </section>`);
   const grid = directory.querySelector(".staff-directory__grid");
+
+  if (!staff.length) {
+    grid.appendChild(el(`<div class="panel"><p class="sub">No department staff yet. Add the first team member above.</p></div>`));
+  }
+
   staff.forEach(member => {
-    const completed = db.problems.filter(problem => problem.assignedTo === member.username && problem.status === "completed");
-    const workedCategories = [...new Set(completed.map(problem => problem.category))];
+    const completed = db.problems.filter(p => p.assignedTo === member.username && p.status === "completed");
+    const open = db.problems.filter(p => p.assignedTo === member.username && p.status !== "completed").length;
+    const workedCategories = [...new Set(completed.map(p => p.category))];
     const types = [...new Set([...(member.workTypes || []), ...workedCategories])];
-    const card = el(`
-      <article class="staff-card">
-        <div class="staff-card__head"><div class="staff-avatar">${escapeHtml(member.name.charAt(0))}</div><div><h3>${escapeHtml(member.name)}</h3><p>${escapeHtml(member.department)}</p></div></div>
-        <div class="staff-card__stats"><span><strong>${completed.length}</strong> completed</span><span><strong>${avgRating(member.username) ?? "—"}</strong> rating</span><span class="coin">${member.coins}</span></div>
-        <div class="staff-card__label">Work types handled</div>
-        <div class="staff-card__types">${types.length ? types.map(type => `<span>${escapeHtml(type)}</span>`).join("") : "<em>No work types recorded yet.</em>"}</div>
-      </article>
-    `);
-    grid.appendChild(card);
+    grid.appendChild(el(`<article class="staff-card">
+      <div class="staff-card__head">
+        <div class="staff-avatar" aria-hidden="true">${esc(member.name.charAt(0))}</div>
+        <div><h3>${esc(member.name)}</h3><p>${esc(member.department)}</p></div>
+      </div>
+      <div class="staff-card__stats">
+        <span><strong>${completed.length}</strong> completed</span>
+        <span><strong>${open}</strong> open</span>
+        <span><strong>${avgRating(member.username) ?? "â€”"}</strong> rating</span>
+        <span class="coin">${member.coins}</span>
+      </div>
+      <div class="staff-card__label">Work types handled</div>
+      <div class="staff-card__types">${types.length ? types.map(type => `<span>${esc(type)}</span>`).join("") : "<em>No work types recorded yet.</em>"}</div>
+    </article>`));
   });
+
   main.appendChild(directory);
 }
 
 function renderAdminRewards(main, user) {
   const staff = db.users.filter(u => u.role === "staff");
   main.appendChild(el(`
-    <div class="page-head"><div><h2>Rewards & payouts</h2><p class="sub">Coins are earned from resident ratings. Convert a staff member's balance to a cash payout at ${CASH_RATE} coins = 1 unit of currency.</p></div></div>
+    <div class="page-head"><div><h2>Rewards &amp; payouts</h2><p class="sub">Coins are earned from resident ratings. Convert a staff member's balance to a payout at ${CASH_RATE} coins = 1 unit of currency.</p></div></div>
   `));
 
   const panel = el(`<div class="panel"></div>`);
   const table = el(`<table class="table-mini"><thead><tr><th>Staff</th><th>Department</th><th>Avg rating</th><th>Coin balance</th><th></th></tr></thead><tbody></tbody></table>`);
   const body = table.querySelector("tbody");
-  staff.forEach(s => {
-    const row = el(`
-      <tr>
-        <td>${escapeHtml(s.name)}</td>
-        <td>${escapeHtml(s.department)}</td>
-        <td>${avgRating(s.username) ?? "—"}</td>
-        <td class="coin">${s.coins}</td>
-        <td style="text-align:right;">
-          <button class="btn btn--sm btn--teal" ${s.coins <= 0 ? "disabled" : ""} data-user="${s.username}">Convert to payout</button>
-        </td>
-      </tr>
-    `);
-    row.querySelector("button").addEventListener("click", () => {
-      const amount = (s.coins / CASH_RATE).toFixed(2);
-      db.conversions.unshift({ id: "CV-" + Date.now(), staff: s.username, staffName: s.name, coins: s.coins, amount: Number(amount), timestamp: Date.now() });
-      s.coins = 0;
-      saveDB();
-      toast(`Converted ${s.name}'s coins to a payout of ${amount}.`);
-      render();
+
+  if (!staff.length) {
+    panel.appendChild(el(`<p class="sub">No department staff to pay out yet.</p>`));
+  }
+
+  staff.forEach(member => {
+    const row = el(`<tr>
+      <td>${esc(member.name)}</td>
+      <td>${esc(member.department)}</td>
+      <td>${avgRating(member.username) ?? "â€”"}</td>
+      <td class="coin">${member.coins}</td>
+      <td style="text-align:right;">
+        <button class="btn btn--sm btn--teal" ${member.coins <= 0 ? "disabled" : ""} data-user="${esc(member.username)}" type="button">Convert to payout</button>
+      </td>
+    </tr>`);
+    row.querySelector("button").addEventListener("click", (event) => {
+      withBusy(event.currentTarget, "Convertingâ€¦", () => {
+        const amount = (member.coins / CASH_RATE).toFixed(2);
+        db.conversions.unshift({
+          id: "CV-" + Date.now(),
+          staff: member.username,
+          staffName: member.name,
+          coins: member.coins,
+          amount: Number(amount),
+          timestamp: Date.now(),
+        });
+        member.coins = 0;
+        saveDB();
+        toast(`Converted ${member.name}'s coins to a payout of ${amount}.`);
+        render();
+      });
     });
     body.appendChild(row);
   });
@@ -1100,12 +1447,17 @@ function renderAdminRewards(main, user) {
 
   const history = el(`<div class="panel"><h3>Payout history</h3></div>`);
   if (!db.conversions.length) {
-    history.appendChild(el(`<p style="color:var(--ink-faint); font-size:13.5px;">No payouts recorded yet.</p>`));
+    history.appendChild(el(`<p class="sub" style="color:var(--ink-faint);font-size:13.5px;">No payouts recorded yet.</p>`));
   } else {
     const t2 = el(`<table class="table-mini"><thead><tr><th>Date</th><th>Staff</th><th>Coins</th><th>Payout</th></tr></thead><tbody></tbody></table>`);
     const b2 = t2.querySelector("tbody");
     [...db.conversions].sort((a, b) => b.timestamp - a.timestamp).forEach(c => {
-      b2.appendChild(el(`<tr><td class="rel-time" data-ts="${c.timestamp}" title="${fmtDateShort(c.timestamp)}">${timeAgo(c.timestamp)}</td><td>${escapeHtml(c.staffName)}</td><td class="coin">${c.coins}</td><td>${c.amount}</td></tr>`));
+      b2.appendChild(el(`<tr>
+        <td class="rel-time" data-ts="${c.timestamp}" title="${esc(fmtDateShort(c.timestamp))}">${esc(timeAgo(c.timestamp))}</td>
+        <td>${esc(c.staffName)}</td>
+        <td class="coin">${c.coins}</td>
+        <td>${c.amount}</td>
+      </tr>`));
     });
     history.appendChild(t2);
   }
@@ -1118,49 +1470,54 @@ function renderAdminRewards(main, user) {
 
 function renderDrawer(p, user) {
   p.updates = Array.isArray(p.updates) ? p.updates : [];
+
   const overlay = el(`<div class="overlay"></div>`);
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) closeDrawer(overlay.closest(".shell"));
-  });
+  overlay.addEventListener("click", (event) => { if (event.target === overlay) closeDrawer(); });
 
   const drawer = el(`<div class="drawer"></div>`);
+  drawer.setAttribute("role", "dialog");
+  drawer.setAttribute("aria-modal", "true");
+  drawer.setAttribute("aria-label", `${p.id}: ${p.title}`);
+  drawer.tabIndex = -1;
+
   const head = el(`
     <div class="drawer__head">
       <div>
-        <div class="drawer__id">${p.id}</div>
-        <h3 style="margin-top:4px;">${escapeHtml(p.title)}</h3>
+        <div class="drawer__id">${esc(p.id)}</div>
+        <h3 style="margin-top:4px;">${esc(p.title)}</h3>
       </div>
-      <button class="btn btn--ghost btn--sm" id="close-drawer">Close ✕</button>
+      <button class="btn btn--ghost btn--sm" id="close-drawer" type="button">Close âœ•</button>
     </div>
   `);
-  head.querySelector("#close-drawer").addEventListener("click", () => closeDrawer(overlay.closest(".shell") || document.querySelector(".shell")));
+  head.querySelector("#close-drawer").addEventListener("click", closeDrawer);
   drawer.appendChild(head);
 
   const body = el(`<div class="drawer__body"></div>`);
+  body.appendChild(el(`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">${tagStatus(p.status)}${dueTag(p)}${tagPriority(p.priority)}</div>`));
 
-  body.appendChild(el(`
-    <div style="display:flex; gap:8px; margin-bottom:16px;">${tagStatus(p.status)}${tagPriority(p.priority)}</div>
-  `));
+  const resolvedIn = p.completedAt && p.createdAt
+    ? Math.max(1, Math.round((p.completedAt - p.createdAt) / DAY_MS))
+    : null;
 
-  body.appendChild(el(`
-    <div class="panel" style="margin-bottom:18px;">
-      <div style="font-size:12px; color:var(--ink-faint); margin-bottom:10px;">
-        ${escapeHtml(p.category)} · Reported by ${escapeHtml(p.citizenName)} on ${fmtDateShort(p.createdAt)}
-        ${p.assignedToName ? " · Assigned to " + escapeHtml(p.assignedToName) : ""}
-      </div>
-      <p style="line-height:1.6; font-size:14px;">${escapeHtml(p.description)}</p>
-      ${p.photo ? `<div class="photo-preview"><img src="${p.photo}" style="width:100%; max-width:260px; height:auto;" /></div>` : ""}
+  body.appendChild(el(`<div class="panel" style="margin-bottom:18px;">
+    <div style="font-size:12px;color:var(--ink-faint);margin-bottom:10px;">
+      ${esc(p.category)} Â· Reported by ${esc(p.citizenName)} on ${esc(fmtDateShort(p.createdAt))}
+      ${p.assignedToName ? " Â· Assigned to " + esc(p.assignedToName) : ""}
+      ${resolvedIn ? " Â· Resolved in " + resolvedIn + " day" + (resolvedIn === 1 ? "" : "s") : ""}
     </div>
-  `));
+    <p style="line-height:1.6;font-size:14px;">${esc(p.description)}</p>
+    ${p.photo ? `<div class="photo-preview"><img src="${p.photo}" alt="Photo attached to ${esc(p.id)}" style="width:100%;max-width:260px;height:auto;" /></div>` : ""}
+  </div>`));
 
   if (user.role === "admin" && p.status === "submitted") {
-    body.appendChild(renderTriagePanel(p));
+    body.appendChild(renderAssignmentPanel(p, { reassign: false }));
   }
 
   if (user.role === "admin" && (p.status === "assigned" || p.status === "in-progress")) {
-    body.appendChild(el(`<div class="panel" style="margin-bottom:18px; font-size:12.5px; color:var(--ink-soft);">
-      Assigned to <strong>${escapeHtml(p.assignedToName)}</strong> (${escapeHtml(p.department)}). Priority: <strong>${priorityLabel(p.priority)}</strong>.
+    body.appendChild(el(`<div class="panel" style="margin-bottom:18px;font-size:12.5px;color:var(--ink-soft);">
+      Assigned to <strong>${esc(p.assignedToName)}</strong> (${esc(p.department || "â€”")}). Priority: <strong>${esc(priorityLabel(p.priority))}</strong>.
     </div>`));
+    body.appendChild(renderAssignmentPanel(p, { reassign: true }));
   }
 
   if (user.role === "staff" && p.assignedTo === user.username && p.status !== "completed") {
@@ -1177,117 +1534,87 @@ function renderDrawer(p, user) {
 
   drawer.appendChild(body);
   overlay.appendChild(drawer);
+
+  /* Keep focus inside the dialog while it is open. */
+  overlay.addEventListener("keydown", (event) => {
+    if (event.key !== "Tab") return;
+    const focusables = drawer.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  });
+  requestAnimationFrame(() => { try { drawer.focus({ preventScroll: true }); } catch (e) { drawer.focus(); } });
+
   return overlay;
 }
 
-function renderTriagePanel(p) {
-  const panel = el(`<div class="panel" style="margin-bottom:18px;"><h3>Triage this report</h3></div>`);
+/* Shared by first-time triage and by re-assignment of work in flight. */
+function renderAssignmentPanel(p, { reassign }) {
+  const panel = el(`<div class="panel" style="margin-bottom:18px;"><h3>${reassign ? "Reassign or change priority" : "Triage this report"}</h3></div>`);
 
-  panel.appendChild(el(`<div class="field"><span class="label">Priority</span></div>`));
+  panel.appendChild(el(`<span class="label" style="display:block;margin-bottom:6px;font-size:12px;font-weight:700;color:var(--ink-soft);">Priority</span>`));
   const chips = el(`<div class="chip-select" style="margin-bottom:16px;"></div>`);
-  let selectedPriority = "medium";
+  let selectedPriority = p.priority || "medium";
   PRIORITIES.forEach(pr => {
-    const b = el(`<button type="button" data-p="${pr}" class="${pr === selectedPriority ? "is-active" : ""}">${priorityLabel(pr)}</button>`);
-    b.addEventListener("click", () => { selectedPriority = pr; chips.querySelectorAll("button").forEach(x => x.classList.toggle("is-active", x === b)); });
-    chips.appendChild(b);
+    const active = pr === selectedPriority;
+    const button = el(`<button type="button" data-p="${pr}" aria-pressed="${active}" class="${active ? "is-active" : ""}">${esc(priorityLabel(pr))}</button>`);
+    button.addEventListener("click", () => {
+      selectedPriority = pr;
+      chips.querySelectorAll("button").forEach(x => {
+        const on = x === button;
+        x.classList.toggle("is-active", on);
+        x.setAttribute("aria-pressed", String(on));
+      });
+    });
+    chips.appendChild(button);
   });
   panel.appendChild(chips);
 
   const staffOptions = db.users.filter(u => u.role === "staff");
-  panel.appendChild(el(`
-    <div class="field">
-      <span class="label">Assign to</span>
-      <select id="assign-select">
-        ${staffOptions.map(s => `<option value="${s.username}" ${s.department === p.category ? "selected" : ""}>${s.name} — ${s.department}</option>`).join("")}
-      </select>
-    </div>
-  `));
+  if (!staffOptions.length) {
+    panel.appendChild(el(`<p class="sub">No department staff exist yet â€” add someone in the staff directory first.</p>`));
+    return panel;
+  }
 
-  const btn = el(`<button class="btn btn--primary">Set priority and assign</button>`);
-  btn.addEventListener("click", () => {
-    const staffUser = db.users.find(u => u.username === panel.querySelector("#assign-select").value);
-    p.priority = selectedPriority;
-    p.assignedTo = staffUser.username;
-    p.assignedToName = staffUser.name;
-    p.department = staffUser.department;
-    p.status = "assigned";
-    p.assignedAt = Date.now();
-    saveDB();
-    toast(`Assigned to ${staffUser.name}.`);
-    render();
-  });
-  panel.appendChild(btn);
-  return panel;
-}
-
-function renderStaffActionPanel(p) {
-  const panel = el(`<div class="panel" style="margin-bottom:18px;"><h3>Update progress</h3></div>`);
-
-  panel.insertAdjacentHTML("beforeend", `
-    <div class="field"><span class="label">Note</span><textarea id="update-note" placeholder="What did you do, and what's left?"></textarea></div>
-    <div class="field">
-      <span class="label">Percent complete</span>
-      <div class="slider-wrap">
-        <input type="range" id="update-percent" min="0" max="100" value="${nextSuggestedPercent(p)}" />
-        <span class="slider-val" id="slider-display">${nextSuggestedPercent(p)}%</span>
-      </div>
-    </div>
-    <div class="field">
-      <span class="label">Photo (optional)</span>
-      <div class="photo-drop" id="update-photo-drop">Click to attach a progress photo</div>
-      <div class="photo-preview" id="update-photo-preview"></div>
-    </div>
-  `);
-
-  /* ── Dynamic #10: Range slider live display ── */
-  const slider = panel.querySelector("#update-percent");
-  const sliderDisplay = panel.querySelector("#slider-display");
-  slider.addEventListener("input", () => { sliderDisplay.textContent = slider.value + "%"; });
-
-  const preview = panel.querySelector("#update-photo-preview");
-  function refresh() { preview.innerHTML = ui.updatePhoto ? `<img src="${ui.updatePhoto}" />` : ""; }
-  wireDropZone(panel.querySelector("#update-photo-drop"), (d) => { ui.updatePhoto = d; refresh(); });
-  refresh();
-
-  const addBtn = el(`<button class="btn btn--teal" style="margin-right:10px;">Add progress update</button>`);
-  addBtn.addEventListener("click", () => {
-    const text = panel.querySelector("#update-note").value.trim();
-    const percent = Math.max(0, Math.min(100, Number(slider.value) || 0));
-    if (!text) { toast("Add a short note describing the update."); return; }
-    p.updates.push({ id: "U" + Date.now(), text, percent, photo: ui.updatePhoto || null, timestamp: Date.now(), author: p.assignedToName });
-    p.status = "in-progress";
-    ui.updatePhoto = null;
-    saveDB();
-    toast("Progress update added.");
-    render();
-  });
-  panel.appendChild(addBtn);
-
-  panel.appendChild(el(`<hr class="divider" />`));
-  panel.appendChild(el(`<div class="field"><span class="label">Completion photo (recommended)</span>
-    <div class="photo-drop" id="complete-photo-drop">Click to attach a photo of the finished work</div>
-    <div class="photo-preview" id="complete-photo-preview"></div>
+  panel.appendChild(el(`<div class="field">
+    <label class="label" for="assign-select">Assign to</label>
+    <select id="assign-select">
+      ${staffOptions.map(s => `<option value="${esc(s.username)}" ${s.username === p.assignedTo ? "selected" : s.department === p.category && !p.assignedTo ? "selected" : ""}>${esc(s.name)} â€” ${esc(s.department)}</option>`).join("")}
+    </select>
   </div>`));
-  const cPreview = panel.querySelector("#complete-photo-preview");
-  function refreshC() { cPreview.innerHTML = ui.completionPhoto ? `<img src="${ui.completionPhoto}" />` : ""; }
-  wireDropZone(panel.querySelector("#complete-photo-drop"), (d) => { ui.completionPhoto = d; refreshC(); });
-  refreshC();
 
-  const completeBtn = el(`<button class="btn btn--ochre">Mark as completed</button>`);
-  completeBtn.addEventListener("click", () => {
-    p.status = "completed";
-    p.completedAt = Date.now();
-    p.completionPhoto = ui.completionPhoto || null;
-    if (p.updates.length === 0 || p.updates[p.updates.length - 1].percent < 100) {
-      p.updates.push({ id: "U" + Date.now(), text: "Marked as completed.", percent: 100, photo: ui.completionPhoto || null, timestamp: Date.now(), author: p.assignedToName });
-    }
-    ui.completionPhoto = null;
-    saveDB();
-    toast("Marked completed. The resident can now rate the work.");
-    render();
+  const button = el(`<button class="btn btn--primary" type="button">${reassign ? "Update assignment" : "Set priority and assign"}</button>`);
+  button.addEventListener("click", () => {
+    withBusy(button, "Savingâ€¦", () => {
+      const staffUser = db.users.find(u => u.username === panel.querySelector("#assign-select").value);
+      if (!staffUser) { toast("Pick a staff member to assign this to."); return; }
+      const changedOwner = p.assignedTo !== staffUser.username;
+      p.priority = selectedPriority;
+      p.assignedTo = staffUser.username;
+      p.assignedToName = staffUser.name;
+      p.department = staffUser.department;
+      p.assignedAt = changedOwner || !p.assignedAt ? Date.now() : p.assignedAt;
+      if (!reassign || p.status === "submitted") p.status = "assigned";
+
+      /* Re-assignments are auditable, not silent. */
+      if (reassign && changedOwner) {
+        p.updates.push({
+          id: "U" + Date.now(),
+          text: `Reassigned to ${staffUser.name} (${staffUser.department}). Priority set to ${priorityLabel(selectedPriority).toLowerCase()}.`,
+          percent: latestPercent({ ...p, status: "in-progress" }),
+          photo: null,
+          timestamp: Date.now(),
+          author: "Administrator",
+        });
+      }
+      saveDB();
+      toast(`Assigned to ${staffUser.name}.`);
+      render();
+    });
   });
-  panel.appendChild(completeBtn);
-
+  panel.appendChild(button);
   return panel;
 }
 
@@ -1296,95 +1623,186 @@ function nextSuggestedPercent(p) {
   return Math.min(90, (p.updates[p.updates.length - 1].percent || 0) + 25);
 }
 
-/* ── Dynamic #1: Timeline with animated progress bars ── */
+function renderStaffActionPanel(p) {
+  const panel = el(`<div class="panel" style="margin-bottom:18px;"><h3>Update progress</h3></div>`);
+
+  panel.insertAdjacentHTML("beforeend", `
+    <div class="field">
+      <label class="label" for="update-note">Note</label>
+      <textarea id="update-note" placeholder="What did you do, and what's left?"></textarea>
+    </div>
+    <div class="field">
+      <label class="label" for="update-percent">Percent complete</label>
+      <div class="slider-wrap">
+        <input type="range" id="update-percent" min="0" max="100" value="${nextSuggestedPercent(p)}" />
+        <output class="slider-val" id="slider-display">${nextSuggestedPercent(p)}%</output>
+      </div>
+    </div>
+    <div class="field">
+      <span class="label">Photo (optional)</span>
+      <div class="photo-drop" id="update-photo-drop">Click or drop a progress photo here</div>
+      <div class="photo-preview" id="update-photo-preview"></div>
+    </div>
+  `);
+
+  const slider = panel.querySelector("#update-percent");
+  const sliderDisplay = panel.querySelector("#slider-display");
+  slider.addEventListener("input", () => { sliderDisplay.textContent = slider.value + "%"; });
+
+  const preview = panel.querySelector("#update-photo-preview");
+  const refresh = () => { preview.innerHTML = ui.updatePhoto ? `<img src="${ui.updatePhoto}" alt="Progress photo" />` : ""; };
+  wireDropZone(panel.querySelector("#update-photo-drop"), (dataUrl) => { ui.updatePhoto = dataUrl; refresh(); });
+  refresh();
+
+  const addBtn = el(`<button class="btn btn--teal" type="button" style="margin-right:10px;">Add progress update</button>`);
+  addBtn.addEventListener("click", () => {
+    const text = panel.querySelector("#update-note").value.trim();
+    const percent = Math.max(0, Math.min(100, Number(slider.value) || 0));
+    if (!text) { toast("Add a short note describing the update."); return; }
+    withBusy(addBtn, "Savingâ€¦", () => {
+      p.updates.push({ id: "U" + Date.now(), text, percent, photo: ui.updatePhoto || null, timestamp: Date.now(), author: p.assignedToName });
+      p.status = "in-progress";
+      ui.updatePhoto = null;
+      saveDB();
+      toast("Progress update added.");
+      render();
+    });
+  });
+  panel.appendChild(addBtn);
+
+  panel.appendChild(el(`<hr class="divider" />`));
+  panel.appendChild(el(`<div class="field">
+    <span class="label">Completion photo (recommended)</span>
+    <div class="photo-drop" id="complete-photo-drop">Click or drop a photo of the finished work here</div>
+    <div class="photo-preview" id="complete-photo-preview"></div>
+  </div>`));
+  const cPreview = panel.querySelector("#complete-photo-preview");
+  const refreshC = () => { cPreview.innerHTML = ui.completionPhoto ? `<img src="${ui.completionPhoto}" alt="Completion photo" />` : ""; };
+  wireDropZone(panel.querySelector("#complete-photo-drop"), (dataUrl) => { ui.completionPhoto = dataUrl; refreshC(); });
+  refreshC();
+
+  const completeBtn = el(`<button class="btn btn--ochre" type="button">Mark as completed</button>`);
+  completeBtn.addEventListener("click", () => {
+    withBusy(completeBtn, "Completingâ€¦", () => {
+      p.status = "completed";
+      p.completedAt = Date.now();
+      p.completionPhoto = ui.completionPhoto || null;
+      const last = p.updates[p.updates.length - 1];
+      if (!last || (last.percent || 0) < 100) {
+        p.updates.push({ id: "U" + Date.now(), text: "Marked as completed.", percent: 100, photo: ui.completionPhoto || null, timestamp: Date.now(), author: p.assignedToName });
+      }
+      ui.completionPhoto = null;
+      saveDB();
+      toast("Marked completed. The resident can now rate the work.");
+      render();
+    });
+  });
+  panel.appendChild(completeBtn);
+  return panel;
+}
+
 function renderTimeline(p) {
   const panel = el(`<div class="panel" style="margin-bottom:18px;"><h3>Progress timeline</h3></div>`);
   const tl = el(`<div class="timeline"></div>`);
-  tl.appendChild(el(`
-    <div class="timeline-step">
-      <div class="timeline-step__head">
-        <span>Reported by ${escapeHtml(p.citizenName)}</span>
-        <span class="timeline-step__time rel-time" data-ts="${p.createdAt}" title="${fmtDate(p.createdAt)}">${timeAgo(p.createdAt)}</span>
-      </div>
+
+  tl.appendChild(el(`<div class="timeline-step">
+    <div class="timeline-step__head">
+      <span>Reported by ${esc(p.citizenName)}</span>
+      <span class="timeline-step__time rel-time" data-ts="${p.createdAt}" title="${esc(fmtDate(p.createdAt))}">${esc(timeAgo(p.createdAt))}</span>
     </div>
-  `));
+  </div>`));
+
   if (p.assignedAt) {
-    tl.appendChild(el(`
-      <div class="timeline-step">
-        <div class="timeline-step__head">
-          <span>Assigned to ${escapeHtml(p.assignedToName)}</span>
-          <span class="timeline-step__time rel-time" data-ts="${p.assignedAt}" title="${fmtDate(p.assignedAt)}">${timeAgo(p.assignedAt)}</span>
-        </div>
+    tl.appendChild(el(`<div class="timeline-step">
+      <div class="timeline-step__head">
+        <span>Assigned to ${esc(p.assignedToName || "â€”")}</span>
+        <span class="timeline-step__time rel-time" data-ts="${p.assignedAt}" title="${esc(fmtDate(p.assignedAt))}">${esc(timeAgo(p.assignedAt))}</span>
       </div>
-    `));
+    </div>`));
   }
+
   p.updates.forEach(u => {
-    const step = el(`
-      <div class="timeline-step">
-        <div class="timeline-step__head">
-          <span>${u.percent}% — ${escapeHtml(u.author)}</span>
-          <span class="timeline-step__time rel-time" data-ts="${u.timestamp}" title="${fmtDate(u.timestamp)}">${timeAgo(u.timestamp)}</span>
-        </div>
-        <div class="timeline-step__note">${escapeHtml(u.text)}</div>
+    const step = el(`<div class="timeline-step">
+      <div class="timeline-step__head">
+        <span>${u.percent}% â€” ${esc(u.author)}</span>
+        <span class="timeline-step__time rel-time" data-ts="${u.timestamp}" title="${esc(fmtDate(u.timestamp))}">${esc(timeAgo(u.timestamp))}</span>
       </div>
-    `);
-    // Add animated progress bar inside each timeline step
-    const barWrap = el(`<div style="margin-top:6px;"><div class="progress-bar-wrap"><div class="progress-bar-fill${u.percent >= 100 ? " is-done" : ""}" data-target="${u.percent}"></div></div></div>`);
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      const fill = barWrap.querySelector(".progress-bar-fill");
-      if (fill) fill.style.width = u.percent + "%";
-    }));
-    step.appendChild(barWrap);
-    if (u.photo) step.appendChild(el(`<img src="${u.photo}" />`));
+      <div class="timeline-step__note"></div>
+    </div>`);
+    step.querySelector(".timeline-step__note").textContent = u.text;
+    step.appendChild(progressBar(u.percent, u.percent >= 100));
+    if (u.photo) step.appendChild(el(`<img src="${u.photo}" alt="Progress photo attached to ${esc(p.id)}" />`));
     tl.appendChild(step);
   });
+
   if (p.status === "completed" && p.rating) {
-    tl.appendChild(el(`
-      <div class="timeline-step">
-        <div class="timeline-step__head">
-          <span>Rated by ${escapeHtml(p.citizenName)}</span>
-          <span class="timeline-step__time rel-time" data-ts="${p.ratedAt}" title="${fmtDate(p.ratedAt)}">${timeAgo(p.ratedAt)}</span>
-        </div>
-        <div class="timeline-step__note">${"★".repeat(p.rating)}${"☆".repeat(5 - p.rating)} ${p.feedback ? "— " + escapeHtml(p.feedback) : ""}</div>
+    tl.appendChild(el(`<div class="timeline-step">
+      <div class="timeline-step__head">
+        <span>Rated by ${esc(p.citizenName)}</span>
+        <span class="timeline-step__time rel-time" data-ts="${p.ratedAt}" title="${esc(fmtDate(p.ratedAt))}">${esc(timeAgo(p.ratedAt))}</span>
       </div>
-    `));
+      <div class="timeline-step__note">${"â˜…".repeat(p.rating)}${"â˜†".repeat(5 - p.rating)}${p.feedback ? " â€” " + esc(p.feedback) : ""}</div>
+    </div>`));
   }
+
   panel.appendChild(tl);
   return panel;
 }
 
 function renderRatingPanel(p) {
   if (p.rating) {
-    return el(`
-      <div class="panel">
-        <h3>Your feedback</h3>
-        <div class="stars readonly">${[1,2,3,4,5].map(n => `<button disabled class="${n <= p.rating ? "is-filled" : ""}">★</button>`).join("")}</div>
-        <p style="margin-top:8px; font-size:13.5px; color:var(--ink-soft);">${escapeHtml(p.feedback || "")}</p>
+    return el(`<div class="panel">
+      <h3>Your feedback</h3>
+      <div class="stars readonly" role="img" aria-label="${p.rating} out of 5 stars">
+        ${[1, 2, 3, 4, 5].map(n => `<button type="button" disabled class="${n <= p.rating ? "is-filled" : ""}" tabindex="-1" aria-hidden="true">â˜…</button>`).join("")}
       </div>
-    `);
+      <p style="margin-top:8px;font-size:13.5px;color:var(--ink-soft);">${esc(p.feedback || "")}</p>
+    </div>`);
   }
-  const panel = el(`<div class="panel"><h3>Rate this completed report</h3><p style="font-size:13px; color:var(--ink-soft); margin-bottom:12px;">Your rating awards coins to ${escapeHtml(p.assignedToName)} for this job.</p></div>`);
+
+  const panel = el(`<div class="panel">
+    <h3>Rate this completed report</h3>
+    <p style="font-size:13px;color:var(--ink-soft);margin-bottom:12px;">
+      Your rating awards coins to ${esc(p.assignedToName || "the crew")} at ${COIN_RATE} coins per star.
+    </p>
+  </div>`);
+
   let rating = 0;
-  const stars = el(`<div class="stars"></div>`);
+  const stars = el(`<div class="stars" role="group" aria-label="Rating out of 5 stars"></div>`);
+  const rewardLine = el(`<p style="margin-top:8px;font-size:12.5px;color:var(--ink-faint);"></p>`);
   for (let n = 1; n <= 5; n++) {
-    const b = el(`<button type="button" data-n="${n}">★</button>`);
-    b.addEventListener("click", () => { rating = n; stars.querySelectorAll("button").forEach((s, i) => s.classList.toggle("is-filled", i < rating)); });
-    stars.appendChild(b);
+    const button = el(`<button type="button" data-n="${n}" aria-label="${n} star${n > 1 ? "s" : ""}" aria-pressed="false">â˜…</button>`);
+    button.addEventListener("click", () => {
+      rating = n;
+      stars.querySelectorAll("button").forEach((s, i) => {
+        s.classList.toggle("is-filled", i < rating);
+        s.setAttribute("aria-pressed", String(i < rating));
+      });
+      rewardLine.textContent = `${rating * COIN_RATE} coins will be awarded to ${p.assignedToName}.`;
+    });
+    stars.appendChild(button);
   }
   panel.appendChild(stars);
-  panel.appendChild(el(`<div class="field" style="margin-top:14px;"><span class="label">Feedback (optional)</span><textarea id="feedback-text" placeholder="How was the service?"></textarea></div>`));
-  const submit = el(`<button class="btn btn--primary">Submit rating</button>`);
+  panel.appendChild(rewardLine);
+  panel.appendChild(el(`<div class="field" style="margin-top:14px;">
+    <label class="label" for="feedback-text">Feedback (optional)</label>
+    <textarea id="feedback-text" placeholder="How was the service?"></textarea>
+  </div>`));
+
+  const submit = el(`<button class="btn btn--primary" type="button">Submit rating</button>`);
   submit.addEventListener("click", () => {
     if (!rating) { toast("Choose a star rating first."); return; }
-    p.rating = rating;
-    p.feedback = panel.querySelector("#feedback-text").value.trim();
-    p.ratedAt = Date.now();
-    p.coinsAwarded = rating * COIN_RATE;
-    const staffUser = db.users.find(u => u.username === p.assignedTo);
-    if (staffUser) staffUser.coins = (staffUser.coins || 0) + p.coinsAwarded;
-    saveDB();
-    toast(`Thanks! ${p.coinsAwarded} coins awarded to ${p.assignedToName}.`);
-    render();
+    withBusy(submit, "Savingâ€¦", () => {
+      p.rating = rating;
+      p.feedback = panel.querySelector("#feedback-text").value.trim();
+      p.ratedAt = Date.now();
+      p.coinsAwarded = rating * COIN_RATE;
+      const staffUser = db.users.find(u => u.username === p.assignedTo);
+      if (staffUser) staffUser.coins = (staffUser.coins || 0) + p.coinsAwarded;
+      saveDB();
+      toast(`Thanks! ${p.coinsAwarded} coins awarded to ${p.assignedToName}.`);
+      render();
+    });
   });
   panel.appendChild(submit);
   return panel;
@@ -1392,4 +1810,21 @@ function renderRatingPanel(p) {
 
 /* ---------------- Boot ---------------- */
 
+/* Installed exactly once: Escape closes the drawer, then the sidebar. */
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (ui.detailId) { closeDrawer(); return; }
+  if (ui.sidebarOpen) setSidebar(false);
+});
+
+function showStorageNote() {
+  if (document.querySelector(".storage-note")) return;
+  const note = el(`<div class="storage-note" role="status"></div>`);
+  note.textContent = "Preview mode â€” reports stay in this tab and won't be saved.";
+  document.body.appendChild(note);
+}
+
 render();
+startRelativeTimeTicker();
+if (!localStore.persistent) showStorageNote();
+

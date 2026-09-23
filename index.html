@@ -10,7 +10,6 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css" />
-<link rel="stylesheet" href="css/experience.css" />
 </head>
 <body>
 
@@ -28,13 +27,13 @@
     </div>
 
     <div class="login-panel">
-      <div class="login-panel__tabs" id="login-role-tabs">
-        <button type="button" class="role-tab is-active" data-role="citizen">Resident</button>
-        <button type="button" class="role-tab" data-role="staff">Department staff</button>
-        <button type="button" class="role-tab" data-role="admin">Administrator</button>
+      <div class="login-panel__tabs" id="login-role-tabs" role="tablist" aria-label="Choose a demo role">
+        <button type="button" class="role-tab is-active" data-role="citizen" aria-pressed="true">Resident</button>
+        <button type="button" class="role-tab" data-role="staff" aria-pressed="false">Department staff</button>
+        <button type="button" class="role-tab" data-role="admin" aria-pressed="false">Administrator</button>
       </div>
 
-      <form id="login-form" class="login-form">
+      <form id="login-form" class="login-form" novalidate>
         <label>
           <span>Username</span>
           <input type="text" id="login-username" autocomplete="username" required />
@@ -43,7 +42,7 @@
           <span>Password</span>
           <input type="password" id="login-password" autocomplete="current-password" required />
         </label>
-        <p class="login-error" id="login-error" hidden></p>
+        <p class="login-error" id="login-error" role="alert" hidden></p>
         <button type="submit" class="btn btn--primary btn--block">Sign in</button>
       </form>
 
